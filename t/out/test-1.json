@@ -1,0 +1,41 @@
+{
+  "piid": "fuse-appliance-template",
+  "pluginDependencies": [],
+  "pluginType": "p",
+  "pluginTypeTitle": "Provider",
+  "settingsDefaults": {
+    "objectVariables": [
+      {
+        "description": "User's API Key for this server (xxx maybe provide instructions for retrieving the API key)",
+        "id": "FUSE:APIKey",
+        "title": "API Key",
+        "type": "string",
+        "value": "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+      },
+      {
+        "description": "A unique label that the remote host uses to identify the requested dataset.",
+        "id": "FUSE:foreignDatasetID",
+        "title": "Foreign dataset ID",
+        "type": "string",
+        "value": "SDY61-9"
+      }
+    ],
+    "pluginParameters": [
+      {
+        "description": "The URL, minus the protocol.",
+        "id": "FUSE:baseURL",
+        "title": "Base URL",
+        "type": "string",
+        "value": "www.immunespace.org"
+      },
+      {
+        "description": "Don't actually download or cause any side-effects.",
+        "id": "FUSE:Test",
+        "title": "Test mode",
+        "type": "string",
+        "value": "FALSE"
+      }
+    ]
+  },
+  "title": "Generic server type appliance"
+}
