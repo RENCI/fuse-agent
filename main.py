@@ -47,7 +47,7 @@ async def providers():
     config_path = pathlib.Path(__file__).parent / "config.json"
     with open(config_path) as f:
         config= json.load(f)
-    return config.configuredServices.providers
+    return config["configuredServices"]["providers"]
 
 
 @app.get("/tools", summary="Returns a list of the configured data tools")
@@ -55,7 +55,7 @@ async def tools():
     config_path = pathlib.Path(__file__).parent / "config.json"
     with open(config_path) as f:
         config= json.load(f)
-    return config.configuredServices.tools
+    return config["configuredServices"]["tools"]
 
 @app.post("/submitter", summary="Create a record for a new submitter")
 async def add_submitter():
@@ -93,8 +93,16 @@ async def analyze():
      - tool url
      - tool parameter values
     returns results_id
+from slack:
+When an analysis is submitted to an agent, the agent will:
+Create a "results"-type object_id in it's database, containing status="started" and the link to where you can get the object when its finished
+enqueue the tool request
+return the object_id
+2. When the analysis job comes up, the agent updates the status, calls the tool, waits for a result,  and persists the result
+3. When the dashboard asks for the object, the agent returns the meta data
+4. If the meta data shows status = finished, the dashboard uses the link in the meta data to retrieve the results. (edited) 
     '''
-    
+
 
 @app.get("/search/{submitter_id}", summary="get all object metadata accessible for this submitter")
 async def get_results():
