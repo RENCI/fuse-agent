@@ -15,9 +15,23 @@ FUSE appliances can be run as a stand-alone appliance (see `up.sh` below) or as 
 * python 3.8 or higher
 * Docker 20.10 or higher
 * docker-compose v1.28 a
-* perl 5.16.3 or higher (for testing the install)
+### for testing the install:
+* perl 5.16.3 or higher
 * cpan
+* cpanm
 * jq
+Be sure PERL5LIB is set to where your libraries are installed, e.g. something like the following may work:
+```
+export PERL5LIB=/home/${USER}/perl5/lib/perl5
+```
+Also be sure locale is appropriately set on the linux machine, if not you may need something like the following in your .bashrc or .bash_profile
+```
+# Setting for the new UTF-8 terminal support in Lion
+export LC_CTYPE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+```
+
+
 
 Tips for updating docker-compose on Centos:
 
