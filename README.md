@@ -2,7 +2,7 @@
 
 # fuse-agent
 
-Clone this repo to create a new FUSE-style appliance.
+Configure this repo to write apps against orchestrated, generic data providers and tools.
 
 FUSE stands for "[FAIR](https://www.go-fair.org/)", Usable, Sustainable, and Extensible.
 
@@ -10,6 +10,8 @@ FUSE appliances can be run as a stand-alone appliance (see `up.sh` below) or as 
 * provider: provides a common data access protocol to a digital object provider
 * mapper: maps the data from a particular data provider type into a common data model with consistent syntax and semantics
 * tool: analyzes data from a mapper, providing results and a specification that describes the data types and how to display them.
+
+This "agent" appliance behaves most like a provider, orchestrating services from appliances of types listed above.
 
 ## prerequisites:
 * python 3.8 or higher
