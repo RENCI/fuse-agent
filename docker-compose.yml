@@ -13,3 +13,13 @@ services:
     expose:
       - ${API_PORT}
 
+  agent-tx-persistence:
+    container_name: agent-tx-persistence
+    image: txscience/tx-persistence
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data/db:/data/db
+    expose:
+      - ${MONGO_PORT}

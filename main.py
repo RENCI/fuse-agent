@@ -10,10 +10,16 @@ from typing import Type, Optional, List
 from starlette.responses import StreamingResponse
 
 from bson.json_util import dumps, loads
-import docker
 
-from docker.errors import ContainerError
 import traceback
+
+from logging.config import dictConfig
+import logging
+from fuse.models.Config import LogConfig
+
+dictConfig(LogConfig().dict())
+logger = logging.getLogger("fuse-agent")
+
 
 app = FastAPI()
 
@@ -32,6 +38,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import pymongo
+mongo_client = pymongo.MongoClient('mongodb://%s:%s@agent-tx-persistence:%s/test' % (os.getenv('MONGO_NON_ROOT_USERNAME'), os.getenv('MONGO_NON_ROOT_PASSWORD'),os.getenv('MONGO_PORT')))
+
+mongo_db = mongo_client.test
+mongo_agent=mongo_db.agent
+mongo_submitters=mongo_db.submitters
 
 import pathlib
 import json
@@ -57,18 +70,59 @@ async def tools():
         config= json.load(f)
     return config["configuredServices"]["tools"]
 
+
+def _submitter_object_id(submitter_id):
+    return "agent_" + submitter_id 
+
 @app.post("/submitter", summary="Create a record for a new submitter")
-async def add_submitter():
+async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     adds user
     '''
+    try:
+        object_id = _submitter_object_id(submitter_id)
+        entry = mongo_submitters.find({"object_id": object_id},
+                                      {"_id": 0, "submitter_id": 1})
+        logger.info(msg=f"[add_submitter]found ("+str(entry.count())+") matches for object_id="+str(object_id))
+        if entry.count() != 0:
+            raise Exception("Submitter already added as: " + str(object_id)+", entries found = "+ str(entry.count()))
+
+        submitter_object = {
+            "object_id": object_id,
+            "submitter_id": submitter_id,
+            "created_time": datetime.datetime.utcnow(),
+            "status": "active"
+        }
+        logger.info(msg=f"[add_submitter] submitter_object="+str(submitter_object))
+        mongo_submitters.insert(submitter_object)
+        logger.info(msg=f"[add_submitter] submitter added.")
+
+        ret_val = {"submitter_id": submitter_id}
+        logger.info(msg=f"[add_submitter] returning: " + str(ret_val))
+        return ret_val
+    except Exception as e:
+        logger.info(msg=f"[add_submitter] exception, setting upload status to failed for "+object_id)
+        raise HTTPException(status_code=404,
+                            detail="! Exception {0} occurred while inserting submitter ({1}), message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc()))
+        
 
 @app.get("/submitters", summary="Return a list of all known submitters")
 async def get_submitters():
     '''
-    adds user
+    return all users
     '''
+    try:
+        logger.info(msg=f"[submitters] get all.")
+        ret = list(map(lambda a: a, mongo_submitters.find({}, {"_id": 0, "submitter_id": 1})))
+        logger.info(msg=f"[submitters] ret:" + str(ret))
+        return ret
+    
+    except Exception as e:
+        raise HTTPException(status_code=404,
+                            detail="! Exception {0} occurred while finding all submitters, message=[{1}] \n! traceback=\n{2}\n".format(type(e), e, traceback.format_exc()))
 
+    
+        
 @app.delete("/submitter/{submitter_id}", summary="Remove a submitter record")
 async def delete_submitter():
     '''
