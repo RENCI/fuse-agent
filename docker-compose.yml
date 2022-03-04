@@ -1,14 +1,15 @@
 version: '3.8'
 services:
-  fuse-appliance-template:
-    container_name: fuse-appliance-template
+  fuse-agent:
+    container_name: fuse-agent
     build: .
-    restart: always
+    #restart: always
     env_file: .env
     ports:
         - ${API_PORT}:8000
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
+        - ./config/config.json:/app/config.json
     expose:
       - ${API_PORT}
 
