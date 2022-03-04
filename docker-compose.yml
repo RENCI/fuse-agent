@@ -9,7 +9,7 @@ services:
         - ${API_PORT}:8000
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
-        - ./config/config.json:/app/config.json
+        - ${CONFIG_PATH}:/app/config.json
     expose:
       - ${API_PORT}
 

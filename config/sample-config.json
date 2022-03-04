@@ -1,0 +1,18 @@
+{
+  "configuredServices": {
+    "providers":
+    [
+      {
+	"title": "Custom data",
+	"URL": "http://localhost:8083"
+      }
+    ],
+    "tools":
+    [
+      {
+	"title": "Principal Components Analyzer",
+	"URL": "http://localhost:8086"
+      }
+    ]
+  }
+}
