@@ -122,13 +122,46 @@ async def get_submitters():
                             detail="! Exception {0} occurred while finding all submitters, message=[{1}] \n! traceback=\n{2}\n".format(type(e), e, traceback.format_exc()))
 
     
-        
-@app.delete("/submitter/{submitter_id}", summary="Remove a submitter record")
-async def delete_submitter():
+@app.delete("/delete/submitter/{submitter_id}", summary="Remove a submitter record")
+async def delete_submitter(submitter_id: str= Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     deletes submitter and their datasets, analyses
     '''
-
+    delete_status = "done"
+    ret_mongo=""
+    ret_mongo_err=""
+    try:
+        logger.warn(msg=f"[delete_submitter] Deleting submitter_id:" + str(submitter_id))
+        ret = mongo_submitters.delete_one({"submitter_id": submitter_id})
+        #<class 'pymongo.results.DeleteResult'>
+        delete_status = "deleted"
+        if ret.acknowledged != True:
+            delete_status = "failed"
+            ret_mongo += "ret.acknoledged not True.\n"
+            logger.error(msg=f"[delete_submitter] delete failed, ret.acknowledged ! = True")
+        if ret.deleted_count != 1:
+            # should never happen if index was created for this field
+            delete_status = "failed"
+            ret_mongo += "Wrong number of records deleted ("+str(ret.deleted_count)+")./n"
+            logger.error(msg=f"[delete_submitter] delete failed, wrong number deleted, count[1]="+str(ret.deleted_count))
+        ## xxx
+        # could check if there are any remaining; but this should instead be enforced by creating an index for this columnxs
+        # could check ret.raw_result['n'] and ['ok'], but 'ok' seems to always be 1.0, and 'n' is the same as deleted_count
+        ##
+        ret_mongo += "Deleted count=("+str(ret.deleted_count)+"), Acknowledged=("+str(ret.acknowledged)+")./n"
+    except Exception as e:
+        logger.error(msg=f"[delete_submitter] Exception {0} occurred while deleting {1} from database\n".format(type(e), submitter_id))
+        ret_mongo_err += "! Exception {0} occurred while deleting {1} from database, message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc())
+        delete_status = "exception"
+        
+    ret = {
+        "status": delete_status,
+        "info": ret_mongo,
+        "stderr": ret_mongo_err
+    }
+    logger.info(msg=f"[delete_submitter] returning ("+str(ret)+")\n")
+    return ret
+    
 @app.post("/load", summary="load a dataset for analysis")
 async def load():
     '''
