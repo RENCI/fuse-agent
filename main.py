@@ -1,4 +1,5 @@
 import datetime
+import dateutil.parser
 import inspect
 import os
 
@@ -74,10 +75,10 @@ async def tools():
 def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
 
-@app.post("/submitter", summary="Create a record for a new submitter")
+@app.post("/add/submitter", summary="Create a record for a new submitter")
 async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
-    adds user
+    Add a new submitter
     '''
     try:
         object_id = _submitter_object_id(submitter_id)
@@ -106,20 +107,49 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
                             detail="! Exception {0} occurred while inserting submitter ({1}), message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc()))
         
 
-@app.get("/submitters", summary="Return a list of all known submitters")
-async def get_submitters():
+@app.get("/submitter/{submitter_id}", summary="Return metadata associated with submitter")
+async def get_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
+    try:
+        object_id = _submitter_object_id(submitter_id)
+        entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
+        logger.info(msg=f"[submitter]found ("+str(entry.count())+") matches for object_id="+str(object_id))
+        if entry.count() != 1:
+            raise Exception("Wrong number of submitters found for [" + str(object_id)+"], entries found = "+ str(entry.count()))
+        ret_val = entry[0]
+        logger.info(msg=f"[submitter] returning: " + str(ret_val))
+        return ret_val
+    except Exception as e:
+        raise HTTPException(status_code=404,
+                            detail="! Exception {0} occurred while finding submitter ({1}), message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc()))
+    
+    
+@app.get("/search/submitters", summary="Return a list of known submitters")
+async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
     '''
-    return all users
+    return list of submitters
     '''
     try:
-        logger.info(msg=f"[submitters] get all.")
-        ret = list(map(lambda a: a, mongo_submitters.find({}, {"_id": 0, "submitter_id": 1})))
+        if within_minutes != None:
+            logger.info(msg=f"[submitters] get submitters created within the last %d minutes." % within_minutes)
+            until_time = datetime.datetime.utcnow()
+            within_minutes_time = datetime.timedelta(minutes=within_minutes)
+            from_time = until_time - within_minutes_time
+            search_object = {
+                "created_time": {
+                    "$gte": from_time,
+                    "$lt": until_time
+                }
+            }
+        else:
+            logger.info(msg=f"[submitters] get all.")
+            search_object = {}
+        ret = list(map(lambda a: a, mongo_submitters.find(search_object, {"_id": 0, "submitter_id": 1})))
         logger.info(msg=f"[submitters] ret:" + str(ret))
         return ret
     
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail="! Exception {0} occurred while finding all submitters, message=[{1}] \n! traceback=\n{2}\n".format(type(e), e, traceback.format_exc()))
+                            detail="! Exception {0} occurred while searching submitters, message=[{1}] \n! traceback=\n{2}\n".format(type(e), e, traceback.format_exc()))
 
     
 @app.delete("/delete/submitter/{submitter_id}", summary="Remove a submitter record")
@@ -191,13 +221,14 @@ return the object_id
     '''
 
 
-@app.get("/search/{submitter_id}", summary="get all object metadata accessible for this submitter")
-async def get_results():
+@app.get("/search/objects", summary="get all object metadata accessible for this submitter")
+async def get_results(submitter_id: Optional[str] = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     takes optional parameter "data_type=<data-type>" from [dataset-geneExpression, result-PCA, result-cellularFunction]
     for dataset type objects, metadata would include provider url, provider object_id
     for results type objects, metadata would include tool parameter values, tool url, provider url, provider object_id
     '''
+
 
 @app.get("/objects/{object_id}", summary="get metadata for the object")
 async def get_object():
@@ -205,4 +236,3 @@ async def get_object():
     gets object metadata, including link to object
     Includes status and links to the input dataset, parameters, and dataset results
     '''
-
