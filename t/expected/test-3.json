@@ -1,6 +1,7 @@
 [
   {
-    "URL": "http://localhost:8086",
+    "URL": "http://fuse-tool-pca:8000",
+    "id": "fuse-tool-pca",
     "title": "Principal Components Analyzer"
   }
 ]

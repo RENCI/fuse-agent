@@ -1,6 +1,7 @@
 [
   {
-    "URL": "http://localhost:8083",
+    "URL": "http://fuse-provider-upload:8000",
+    "id": "fuse-provider-upload",
     "title": "Custom data"
   }
 ]

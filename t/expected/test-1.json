@@ -2,13 +2,15 @@
   "configuredServices": {
     "providers": [
       {
-        "URL": "http://localhost:8083",
+        "URL": "http://fuse-provider-upload:8000",
+        "id": "fuse-provider-upload",
         "title": "Custom data"
       }
     ],
     "tools": [
       {
-        "URL": "http://localhost:8086",
+        "URL": "http://fuse-tool-pca:8000",
+        "id": "fuse-tool-pca",
         "title": "Principal Components Analyzer"
       }
     ]

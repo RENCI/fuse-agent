@@ -12,6 +12,8 @@ services:
         - ${CONFIG_PATH}:/app/config.json
     expose:
       - ${API_PORT}
+    networks:
+      - fuse
 
   agent-tx-persistence:
     container_name: agent-tx-persistence
@@ -23,3 +25,9 @@ services:
       - ./data/db:/data/db
     expose:
       - ${MONGO_PORT}
+    networks:
+      - fuse
+
+networks:
+  fuse:
+    driver: bridge

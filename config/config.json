@@ -3,15 +3,17 @@
     "providers":
     [
       {
+	"id": "fuse-provider-upload",
 	"title": "Custom data",
-	"URL": "http://localhost:8083"
+	"URL": "http://fuse-provider-upload:8000"
       }
     ],
     "tools":
     [
       {
+	"id": "fuse-tool-pca",
 	"title": "Principal Components Analyzer",
-	"URL": "http://localhost:8086"
+	"URL": "http://fuse-tool-pca:8000"
       }
     ]
   }
