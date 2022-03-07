@@ -1,6 +1,7 @@
 [
   {
     "URL": "http://fuse-tool-pca:8000",
+    "container-network": "fuse",
     "id": "fuse-tool-pca",
     "title": "Principal Components Analyzer"
   }

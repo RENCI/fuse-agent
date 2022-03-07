@@ -1,7 +1,5 @@
 FROM python:3.7
 
-EXPOSE 8000
-
 COPY ./requirements.txt /app/requirements.txt
 
 RUN pip install -r /app/requirements.txt
@@ -18,4 +16,4 @@ RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debia
 COPY . /app
 COPY ./fuse /fuse
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port 8000

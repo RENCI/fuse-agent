@@ -34,7 +34,7 @@ our $SUBMITTER_ID='test@email.com';
 use Dotenv;      
 Dotenv->load;
 
-our $HOST_PATH = "http://localhost:$ENV{'API_PORT'}"; #8082;
+our $HOST_PATH = "http://localhost:$ENV{'HOST_PORT'}"; #8082;
 
 
 GetOptions('dry_run' => \$dry_run,
@@ -42,7 +42,7 @@ GetOptions('dry_run' => \$dry_run,
 if($verbose){
     print("+ dry_run: $dry_run\n");
     print("+ verbose: $verbose\n");
-    print("+ API_PORT: $ENV{'API_PORT'}\n");
+    print("+ HOST_PORT: $ENV{'HOST_PORT'}\n");
 }
 
 my $fn ;

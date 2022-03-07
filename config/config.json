@@ -4,6 +4,7 @@
     [
       {
 	"id": "fuse-provider-upload",
+	"container-network": "fuse",
 	"title": "Custom data",
 	"URL": "http://fuse-provider-upload:8000"
       }
@@ -12,6 +13,7 @@
     [
       {
 	"id": "fuse-tool-pca",
+	"container-network": "fuse",
 	"title": "Principal Components Analyzer",
 	"URL": "http://fuse-tool-pca:8000"
       }

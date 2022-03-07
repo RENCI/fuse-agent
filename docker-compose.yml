@@ -1,19 +1,17 @@
 version: '3.8'
 services:
   fuse-agent:
-    container_name: fuse-agent
+    container_name: ${CONTAINER_NAME}
     build: .
     #restart: always
     env_file: .env
     ports:
-        - ${API_PORT}:8000
+        - ${HOST_PORT}:${CONTAINER_PORT}
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - ${CONFIG_PATH}:/app/config.json
-    expose:
-      - ${API_PORT}
     networks:
-      - fuse
+      - agent_network
 
   agent-tx-persistence:
     container_name: agent-tx-persistence
@@ -26,8 +24,10 @@ services:
     expose:
       - ${MONGO_PORT}
     networks:
-      - fuse
+      - agent_network
 
 networks:
-  fuse:
-    driver: bridge
+  agent_network:
+    name: ${CONTAINER_NETWORK}
+    external: true
+

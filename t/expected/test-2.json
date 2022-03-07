@@ -1,6 +1,7 @@
 [
   {
     "URL": "http://fuse-provider-upload:8000",
+    "container-network": "fuse",
     "id": "fuse-provider-upload",
     "title": "Custom data"
   }
