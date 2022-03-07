@@ -236,9 +236,9 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
         object_id = _submitter_object_id(submitter_id)
         entry = mongo_submitters.find({"object_id": object_id},
                                       {"_id": 0, "submitter_id": 1})
-        logger.info(msg=f"[add_submitter]found ("+str(entry.count())+") matches for object_id="+str(object_id))
+        logger.info(msg=f"[add_submitter]found ({entry.count()}) matches for object_id={object_id}")
         if entry.count() != 0:
-            raise Exception("Submitter already added as: " + str(object_id)+", entries found = "+ str(entry.count()))
+            raise Exception(f"Submitter already added as: {object_id}, entries found = {entry.count()}")
 
         submitter_object = Submitter(
             object_id = object_id,
@@ -246,17 +246,17 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
             created_time = datetime.utcnow(),
             status = SubmitterStatus.approved)
 
-        logger.info(msg=f"[add_submitter] submitter_object="+str(submitter_object))
+        logger.info(msg=f"[add_submitter] submitter_object={submitter_object}")
         mongo_submitters.insert(submitter_object.dict())
-        logger.info(msg=f"[add_submitter] submitter added.")
+        logger.info(msg="[add_submitter] submitter added.")
 
         ret_val = {"submitter_id": submitter_id}
-        logger.info(msg=f"[add_submitter] returning: " + str(ret_val))
+        logger.info(msg=f"[add_submitter] returning: {ret_val}")
         return ret_val
     except Exception as e:
-        logger.info(msg=f"[add_submitter] exception, setting upload status to failed for "+object_id)
+        logger.info(msg=f"[add_submitter] exception, setting upload status to failed for {object_id}")
         raise HTTPException(status_code=404,
-                            detail="! Exception {0} occurred while inserting submitter ({1}), message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc()))
+                            detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
         
 
 @app.get("/submitter/{submitter_id}", summary="Return metadata associated with submitter")
@@ -264,16 +264,15 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
     try:
         object_id = _submitter_object_id(submitter_id)
         entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
-        logger.info(msg=f"[submitter]found ("+str(entry.count())+") matches for object_id="+str(object_id))
+        logger.info(msg=f"[submitter]found ({entry.count()}) matches for object_id={object_id}")
         if entry.count() != 1:
-            raise Exception("Wrong number of submitters found for [" + str(object_id)+"], entries found = "+ str(entry.count()))
+            raise Exception(f"Wrong number of submitters found for [{object_id}], entries found = {entry.count()}")
         ret_val = entry[0]
-        logger.info(msg=f"[submitter] returning: " + str(ret_val))
+        logger.info(msg=f"[submitter] returning: {ret_val}")
         return ret_val
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail="! Exception {0} occurred while finding submitter ({1}), message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc()))
-    
+                            detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
     
 @app.get("/search/submitters", summary="Return a list of known submitters")
 async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
@@ -282,7 +281,7 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
     '''
     try:
         if within_minutes != None:
-            logger.info(msg=f"[submitters] get submitters created within the last %d minutes." % within_minutes)
+            logger.info(msg=f"[submitters] get submitters created within the last {within_minutes} minutes.")
             until_time = datetime.utcnow()
             within_minutes_time = timedelta(minutes=within_minutes)
             from_time = until_time - within_minutes_time
@@ -293,16 +292,15 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
                 }
             }
         else:
-            logger.info(msg=f"[submitters] get all.")
+            logger.info(msg="[submitters] get all.")
             search_object = {}
         ret = list(map(lambda a: a, mongo_submitters.find(search_object, {"_id": 0, "submitter_id": 1})))
-        logger.info(msg=f"[submitters] ret:" + str(ret))
+        logger.info(msg=f"[submitters] ret:{ret}")
         return ret
     
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail="! Exception {0} occurred while searching submitters, message=[{1}] \n! traceback=\n{2}\n".format(type(e), e, traceback.format_exc()))
-
+                            detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
     
 @app.delete("/delete/submitter/{submitter_id}", summary="Remove a submitter record")
 async def delete_submitter(submitter_id: str= Query(default=None, description="unique identifier for the submitter (e.g., email)")):
@@ -313,27 +311,27 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
     ret_mongo=""
     ret_mongo_err=""
     try:
-        logger.warn(msg=f"[delete_submitter] Deleting submitter_id:" + str(submitter_id))
+        logger.warn(msg=f"[delete_submitter] Deleting submitter_id:{submitter_id}")
         ret = mongo_submitters.delete_one({"submitter_id": submitter_id})
         #<class 'pymongo.results.DeleteResult'>
         delete_status = "deleted"
         if ret.acknowledged != True:
             delete_status = "failed"
             ret_mongo += "ret.acknoledged not True.\n"
-            logger.error(msg=f"[delete_submitter] delete failed, ret.acknowledged ! = True")
+            logger.error(msg="[delete_submitter] delete failed, ret.acknowledged ! = True")
         if ret.deleted_count != 1:
             # should never happen if index was created for this field
             delete_status = "failed"
-            ret_mongo += "Wrong number of records deleted ("+str(ret.deleted_count)+")./n"
-            logger.error(msg=f"[delete_submitter] delete failed, wrong number deleted, count[1]="+str(ret.deleted_count))
+            ret_mongo += f"Wrong number of records deleted ({ret.deleted_count})./n"
+            logger.error(msg=f"[delete_submitter] delete failed, wrong number deleted, count[1]={ret.deleted_count}")
         ## xxx
         # could check if there are any remaining; but this should instead be enforced by creating an index for this columnxs
         # could check ret.raw_result['n'] and ['ok'], but 'ok' seems to always be 1.0, and 'n' is the same as deleted_count
         ##
-        ret_mongo += "Deleted count=("+str(ret.deleted_count)+"), Acknowledged=("+str(ret.acknowledged)+")./n"
+        ret_mongo += f"Deleted count=({ret.deleted_count}), Acknowledged=({ret.acknowledged})./n"
     except Exception as e:
-        logger.error(msg=f"[delete_submitter] Exception {0} occurred while deleting {1} from database\n".format(type(e), submitter_id))
-        ret_mongo_err += "! Exception {0} occurred while deleting {1} from database, message=[{2}] \n! traceback=\n{3}\n".format(type(e), submitter_id, e, traceback.format_exc())
+        logger.error(msg=f"[delete_submitter] Exception {type(e)} occurred while deleting {submitter_id} from database, message=[{e}]\n")
+        ret_mongo_err += f"! Exception {type(e)} occurred while deleting {submitter_id}) from database, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
         delete_status = "exception"
         
     ret = {
@@ -341,7 +339,7 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
         "info": ret_mongo,
         "stderr": ret_mongo_err
     }
-    logger.info(msg=f"[delete_submitter] returning ("+str(ret)+")\n")
+    logger.info(msg=f"[delete_submitter] returning ({ret})\n")
     return ret
 
 @app.get("/provider_parameters", summary="convenience function to get the submit parameters for a provider service")
@@ -350,7 +348,7 @@ async def get_submit_parameters(service_id: str = Query(default="fuse-provider-u
     Only works for containers on the same 'fuse-agent_fuse' network as this agent; consequently, containers must be hosted on the same machine.
     '''
     import requests
-    response = requests.get("http://"+str(service_id)+":8000/openapi.json")# xxx won't work, needs to be on same docker network!
+    response = requests.get(f"http://{service_id}:8000/openapi.json")# xxx won't work, needs to be on same docker network!
     json_obj = response.json()
     return json_obj['paths']['/submit']['post']['parameters'] # prints the string with 'source_name' key
 
