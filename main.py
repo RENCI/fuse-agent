@@ -174,6 +174,7 @@ mongo_client = pymongo.MongoClient('mongodb://%s:%s@agent-tx-persistence:%s/test
 mongo_db = mongo_client.test
 mongo_agent=mongo_db.agent
 mongo_submitters=mongo_db.submitters
+mongo_objects=mongo_db.objects
 
 import pathlib
 import json
@@ -219,10 +220,7 @@ def _resolveRef(ref,models):
     return (model_name)
 
 def _resolveRefs(doc, models):
-    if type(doc) == str or type(doc) == bool or doc == None:
-        logger.info(msg=f"[_resolveRefs] STOP:{doc}")
-        return
-    elif type(doc) == dict:
+    if type(doc) == dict:
         if "$ref" in doc:
             model_name =_resolveRef(doc, models)
             doc[model_name] = models[model_name]
@@ -238,8 +236,9 @@ def _resolveRefs(doc, models):
             logger.info(msg=f"[_resolveRefs] resolving list element {elem}")
             _resolveRefs(elem, models)
     else:
-        logger.error(msg=f"[_resolveRefs] Unrecognized type ({type(doc)}) for doc={doc}")
-        raise Exception(f"Unrecognized type ({type(doc)}) for doc={doc}")
+        logger.info(msg=f"[_resolveRefs] STOP:doc type ({type(doc)}) for leaf doc={doc}")
+        return
+
                 
 
 # xxx add this to systems tests after all subsystems are integrated
@@ -391,7 +390,114 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
     except Exception as e:
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
+
+from redis import Redis
+from rq import Queue, Worker
+from rq.job import Job
+from rq.decorators import job
+g_redis_defaut_timeout = 3600
+g_redis_connection = Redis(host='agent-redis', port=6379, db=0) 
+g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
+def _initWorker():
+    worker = Worker(g_queue, connection=g_redis_connection)
+    worker.work()
+
+@job('low', connection=g_redis_connection, timeout=g_redis_default_timeout)
+def _remote_submit_object(service_id, object_id, parameters):
+    try:
+        timeout_seconds = g_redis_default_timeout # xxx read this from config.json, what's reasonable here?
+        import requests
+        foreign_object_id = None # set this early in case there's an exception
+        mongo_uploads.update_one({"object_id": object_id},
+                                 {"$set": {
+                                     "status": "started"
+                                 }})
+        host_url = _get_url(service_id)}
+        logger.info(msg=f"[_remote_submit_object] host_url={host_url}")
+        submit_url=f"{host_url/submit"
+        logger.info(msg=f"[_remote_submit_object] posting to url={submit_url}")
+        response = requests.post(url, data = parameters, timeout=timeout_seconds)
+        json_obj = response.json()
+        logger.info(msg=f"[_remote_submit_object] response={json.dumps(json_obj, indent=4)}")
+        # xxx create unique local object_id and map it to the host url and object id for this service for retrieving later
+        foreign_object_id = json_obj["object_id"]
+        mongo_objects.update_one({"object_id": object_id},
+                                 {"$set": {
+                                     "foreign_object_id": foreign_object_id,
+                                     "status": "finished"
+                                 }})
+    except Exception as e:
+        mongo_objects.update_one({"object_id": object_id},
+                                 {"$set": {
+                                     "foreign_object_id": foreign_object_id,
+                                     "status": "failed"
+                                 }})
+        
+@app.post("/objects/load", summary="load object metadata and data from an end user or a 3rd party server")
+async def post_object(submitter_id: Optional[str] = Query(default=None, description="unique identifier for the submitter (e.g., email)"),
+                      service_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)"),
+                      parameters: Dict = Query(default=None, description="parameters to pass to service_id, use /services/schema to retrieve required parameters")):
+    '''
+    warning: executing this repeatedly for the same service/object will create duplicates in the database
+    '''
+    try:
+        timeout_seconds = g_default_timeout # read this from config.json for the service xxx
+        logger.info(msg=f"[get_results] submitter={submitter_id}, posting params={parameters} to service_id={service_id}, timeout_seconds={timeout_seconds}")
+        import uuid
+        local_object_id = str(uuid.uuid4())
+        job_id = str(uuid.uuid4())
+        provider_object = {"object_id": local_object_id,
+                           "submitter_id": submitter_id,
+                           "service_host_url": host_url,
+                           "foreign_object_id": foreign_object_id,
+                           "job_id": job_id,
+                           "status": None,
+                           }
+        mongo_objects.insert(provider_object.dict())
+        logger.info(msg=f"[get_results] created provider object={json.dumps(provider_object, indent=4)}")
+        g_queue.enqueue(func=_remote_submit_object,
+                        args=(service_id, local_object_id, parameters),
+                        timeout=timeout_seconds,
+                        job_id=job_id,
+                        result_ttl=-1)
+        # xxx is this the right place for this?
+        p_worker = Process(target=_initWorker)
+        p_worker.start()
+        # xxx should this be p_worker.work()?
+        mongo_objects.update_one({"object_id": object_id},
+                                 {"$set": {
+                                     "status": "queued"
+                                 }})
+        
+        return {"object_id",local_object_id}
+    except Exception as e:
+        # xxx log error in database
+        mongo_objects.update_one({"object_id": object_id},
+                                 {"$set": {
+                                     "status": "failed"
+                                 }})
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while loading object to service=[{serice_id}], \n parameters=[{parameters}] \n message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
     
+    
+
+    
+@app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter")
+async def get_objects(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
+    '''
+    returns {'object_id': <object_id>},
+    use /objects/{object_id} to get object status and other metadata
+    '''
+    try:
+        ret = list(map(lambda a: a, mongo_objects.find({"submitter_id": submitter_id}, {"_id": 0, "object_id": 1})))
+        logger.info(msg=f"[get_objects] ret:{ret}")
+        return ret
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail="! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+
+
+# xxx is this necessary? maybe just return status instead?
 @app.get("/objects/{object_id}", summary="get metadata for the object")
 async def get_object():
     '''
@@ -399,14 +505,71 @@ async def get_object():
     Includes status and links to the input dataset, parameters, and dataset results
     '''
 
-@app.get("/search/objects", summary="get all object metadata accessible for this submitter")
-async def get_results(submitter_id: Optional[str] = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
-    '''
-    takes optional parameter "data_type=<data-type>" from [dataset-geneExpression, result-PCA, result-cellularFunction]
-    for dataset type objects, metadata would include provider url, provider object_id
-    for results type objects, metadata would include tool parameter values, tool url, provider url, provider object_id
-    '''
+# xxx is this unecessary? can we just get the url from the provider at time of submission, cache it, and ignore the drs?
+'''
+def _parse_drs(drs_uri):
+    #example:
+    #drs:///{g_host_name}:{g_host_port}/{g_network}/{g_container_name}:{g_container_port}/{object_id}
+    # xxx fix this:
+    from urlparse import urlparse
+    parsed_uri = urlparse(drs_uri)
+    (server_host, server_port) = '{uri.netloc}'.format(uri=parsed_uri).split(":")
+    if server_port == "":
+        server_port = 80
+    (container_network, container_netloc, object_id)= '{uri.netloc}'.format(uri=parsed_uri).split("/")
+    (container_name, container_port) = container_netloc.split(":")
+    drs_dict= {
+        "server_host": server_host,
+        "server_port": server_port,
+        "container_network": container_network,
+        "container_name": container_name,
+        "container_port": container_port,
+        "object_id" object_id
+        }
+    
+    return drs_dict
+'''
 
+from starlette.responses import StreamingResponse
+@app.post("/objects/url/{object_id}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
+async def get_url(object_id: str):
+    '''
+    '''
+    try:
+        entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "foreign_object_id": 1, "service_host_url": 1, "status": 1 })
+        assert entry.count() == 1
+        obj = entry.next()
+        logger.info(msg=f"[get_url] found local object={json.dumps(obj,indent=4)}")
+        assert obj["status"] == "finished":
+        obj_url = f'{obj["host_url"]}/files/{obj["foreign_object_id"]}'
+        logger.info(msg=f"[get_url] built url = ={obj_url}")
+        return return obj_url
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail="! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+        
+    '''
+    # xxx this is all unecessary?:
+
+        #example:
+        #drs:///{g_host_name}:{g_host_port}/{g_network}/{g_container_name}:{g_container_port}/{object_id}
+        # xxx get the object_id DRS from the database
+        drs_dict = _parse_drs(drs)
+        if drs_dict["server_host"] == "localhost" or drs_dict["server_host"] == "0.0.0.0" or drs_dict["server_host"] == os.getenv('HOSTNAME'):
+            # running locally, reference by container name
+            assert os.getenv('CONTAINER_NETWORK')  == drs_dict["container_network"]
+            host_name = f'http://drs_dict["container_name"]:drs_dict["container_port"]'
+        else:
+            host_name = f'https://drs_dict["server_host"]:drs_dict["server_port"]'
+        logger.info(msg=f'[get_url] Retrieving {drs} at host={host_name}, object_id={drs_dict["object_id"]}')
+        file_url = f"{host_name}/files/{object_id}"
+        logger.info(msg=f"[get_url] returning url={file_url}\n")
+        return file_url
+
+    except Exception as e:
+        raise HTTPException(status_code=404,
+                            detail="! Exception {type(e)} occurred while retrieving for ({drs}), server({url}) message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+    '''
 
 @app.post("/analyze", summary="submit an analysis")
 async def analyze():

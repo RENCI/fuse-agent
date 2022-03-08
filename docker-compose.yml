@@ -12,6 +12,9 @@ services:
         - ${CONFIG_PATH}:/app/config.json
     networks:
       - agent_network
+    depends_on:
+        - agent-redis
+        - agent-tx-persistence
 
   agent-tx-persistence:
     container_name: agent-tx-persistence
@@ -23,6 +26,19 @@ services:
       - ./data/db:/data/db
     expose:
       - ${MONGO_PORT}
+    networks:
+      - agent_network
+
+  agent-redis:
+    container_name: agent-redis
+    image: redis:alpine
+    restart: always
+    environment: {}
+    volumes:
+      - /data
+    expose:
+      - 6379
+    command: ["--appendonly", "yes"]
     networks:
       - agent_network
 
