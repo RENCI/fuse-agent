@@ -52,7 +52,10 @@ sudo chmod 755 $DESTINATION
 `git clone --recursive http://github.com/RENCI/fuse-agent
 
 2. Copy `sample.env` to `.env` and edit to suit your provider:
-* __API_PORT__ pick a unique port to avoid appliances colliding with each other
+* __HOST_PORT__ pick a unique port to avoid appliances colliding with each other
+
+
+3. Configure `config\config.json`: We use configuration by convention, so be sure the services that are 'providers' start with 'fuse-provider-' in the config file, and tools start with 'fuse-tool-'. Changes to the config file take place immediately, no need to restart.
 
 ## start
 ```

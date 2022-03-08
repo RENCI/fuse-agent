@@ -33,6 +33,7 @@ our $SUBMITTER_ID='test@email.com';
 # read the .env file
 use Dotenv;      
 Dotenv->load;
+Dotenv->load('t/test.env');
 
 our $HOST_PATH = "http://localhost:$ENV{'HOST_PORT'}"; #8082;
 
@@ -50,11 +51,11 @@ my $fn ;
 cleanup_out();
 
 $fn = "test-1.json";
-files_eq(f($fn), cmd("GET",    $fn, "config"),                                                                    "Get config for fuse-agent");
+files_eq(f($fn), cmd("GET",    $fn, "services"),                                                                  "Get all services for fuse-agent");
 $fn = "test-2.json";
-files_eq(f($fn), cmd("GET",    $fn, "providers"),                                                                 "Get providers configured for this agent");
+files_eq(f($fn), cmd("GET",    $fn, "services/providers"),                                                        "Get providers configured for this agent");
 $fn = "test-3.json";
-files_eq(f($fn), cmd("GET",    $fn, "tools"),                                                                     "Get tools configured for this agent");
+files_eq(f($fn), cmd("GET",    $fn, "services/tools"),                                                            "Get tools configured for this agent");
 $fn = "test-4.json";
 files_eq(f($fn), cmd("POST",    $fn, "add/submitter?submitter_id=${SUBMITTER_ID}", "-H 'accept: application/json' -d ''"),
 	                                                                                                          "Create submitter");

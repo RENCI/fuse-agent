@@ -8,7 +8,7 @@ from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl
 from email_validator import validate_email, EmailNotValidError
-from typing import Type, Optional, List, Union
+from typing import Type, Optional, List, Union, Dict
 from enum import Enum
 from starlette.responses import StreamingResponse
 
@@ -43,27 +43,9 @@ def as_form(cls: Type[BaseModel]):
     setattr(cls, "as_form", _as_form)
     return cls
 
-class PCAParameters(BaseModel):
-    NumberPrincipalComponents: int = 3
 
-class CellularFunctionParameters(BaseModel):
-    SampleNumber: int = 32
-    Ref: str = "MT_recon_2_2_entrez.mat"
-    ThreshType: str = "local"
-    PercentileOrValue: str = "value"
-    Percentile: int = 25
-    Value: int = 5
-    LocalThresholdType: str = "minmaxmean"
-    PercentileLow: int = 25
-    PercentileHigh: int = 75
-    ValueLow: int = 5
-    ValueHigh: int = 5
-
+# xxx clean up these schemas and pull them out to the fuse.models diretory
 # xxx fit this to known data provider parameters
-@as_form
-class AnalysisParameters(BaseModel):
-    Union[PCAParameters,
-          CellularFunctionParameters]
 
 
 class Checksums(BaseModel):
@@ -152,8 +134,9 @@ class ProviderObject(BaseModel): # xxx customize this code
 @as_form
 class ResultsObject(BaseModel): # xxx customize this code
     source_data: ProviderObject = None
-    parameters: AnalysisParameters = None
+    parameters: Dict = None
     results: ProviderObject = None
+
 
 class SubmitterStatus(str, Enum):
     requested='requested'
@@ -194,35 +177,102 @@ mongo_submitters=mongo_db.submitters
 
 import pathlib
 import json
-@app.get("/config", summary="Returns the config for the appliance")
-async def config():
-    '''
-    once you have the list of appliances, you can call each one separately to get the descriptoin of parameters to give to end-users;
-    for example, this to get the full schema forthe parameters required for submitting an object to be loaded by a data provider:
-    curl -X 'GET' '${provider_host}:${provider_port}/openapi.json' -H 'accept: application/json'   2> /dev/null |jq '.paths."/submit".post.parameters'
-    xxx this could also be done by the agent over a docker network if all containers are on the same machine; from inside any container:
-    curl -X 'GET' 'fuse-provider-upload:8000/openapi.json
-    '''
+
+def _read_config():
     config_path = pathlib.Path(__file__).parent / "config.json"
     with open(config_path) as f:
         return json.load(f)
 
+def _get_services(prefix = ""):
+    assert prefix == "fuse-provider-" or prefix == "fuse-tool-" or prefix == ""
+    config = _read_config()
+    return list(filter(lambda x: x.startswith(prefix), list(config["configuredServices"])))
+    
+def _get_url(service_id: str):
+    config = _read_config()
+    service_host_name = config["configuredServices"][service_id]["host_name"]
+    if service_host_name == os.getenv("HOST_NAME") or service_host_name == 'localhost':
+        # co-located service, use container name and network instead:
+        assert config["configuredServices"][service_id]["container-network"] == os.getenv("CONTAINER_NETWORK")
+        url = config["configuredServices"][service_id]["container_URL"]
+    else: 
+        url = config["configuredServices"][service_id][f"http://{service_host_name}:{service_host_port}"]
+    return url    
+
+def _submitter_object_id(submitter_id):
+    return "agent_" + submitter_id 
+
 # xxx get with David to find out what else this should return in the json
-@app.get("/providers", summary="Returns a list of the configured data providers")
+@app.get("/services/providers", summary="Returns a list of the configured data providers")
 async def providers():
-    config_path = pathlib.Path(__file__).parent / "config.json"
-    with open(config_path) as f:
-        config= json.load(f)
-    return config["configuredServices"]["providers"]
+    return _get_services("fuse-provider-")
 
-
-@app.get("/tools", summary="Returns a list of the configured data tools")
+@app.get("/services/tools", summary="Returns a list of the configured data tools")
 async def tools():
-    config_path = pathlib.Path(__file__).parent / "config.json"
-    with open(config_path) as f:
-        config= json.load(f)
-    return config["configuredServices"]["tools"]
+    return _get_services("fuse-tool-")
 
+
+def _resolveRef(ref,models):
+    (refpath, model_name) = os.path.split(ref["$ref"])
+    logger.info(msg=f"[_resolveRef] referenced path={refpath}, model={model_name} ")
+    _resolveRefs(models[model_name], models)
+    return (model_name)
+
+def _resolveRefs(doc, models):
+    if type(doc) == str or type(doc) == bool or doc == None:
+        logger.info(msg=f"[_resolveRefs] STOP:{doc}")
+        return
+    elif type(doc) == dict:
+        if "$ref" in doc:
+            model_name =_resolveRef(doc, models)
+            doc[model_name] = models[model_name]
+            del doc["$ref"]
+            logger.info(msg=f"[_resolveRefs] STOP:resolved[name={model_name}, obj={doc[model_name]}]")
+            return
+        else:
+            for k,v in doc.items():
+                logger.info(msg=f"[_resolveRefs] resolving dict key:{k}, value:{v}")
+                _resolveRefs(doc[k], models)
+    elif type(doc) == list:
+        for elem in doc:
+            logger.info(msg=f"[_resolveRefs] resolving list element {elem}")
+            _resolveRefs(elem, models)
+    else:
+        logger.error(msg=f"[_resolveRefs] Unrecognized type ({type(doc)}) for doc={doc}")
+        raise Exception(f"Unrecognized type ({type(doc)}) for doc={doc}")
+                
+
+# xxx add this to systems tests after all subsystems are integrated
+@app.get("/services/schema/{service_id}", summary="returns the schema for the submit parameters required by the given service")
+async def get_submit_parameters(service_id: str = Query(default="fuse-provider-upload", describe="loop through /providers or /tools to retrieve the submit parameters for each, providing the dashboard with everything it needs to render forms and solicit all the necessary information from the end user in order to load in datasets and/or run analyses")):
+    try: 
+        import requests
+        response = requests.get(f"{_get_url(service_id)}/openapi.json")
+        json_obj = response.json()
+        params = json_obj['paths']['/submit']['post']['parameters'] 
+        components = json_obj['components']['schemas']
+        # look for any referenced data models and fill them in
+        # this is helpful: https://swagger.io/docs/specification/using-ref/
+        #                  https://stackoverflow.com/questions/60010686/how-do-i-access-the-ref-in-the-json-recursively-as-to-complete-the-whole-json
+        # Recurses through dictionaries, lists, and nested references; doesn't handle referenced files
+        logger.info(msg=f"[get_submit_parameters] resolving submit params={params}")
+        logger.info(msg=f"[get_submit_parameters] components={components}")
+        _resolveRefs(params, components)
+        return params
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while retrieving input schema for service submit, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+
+@app.get("/services", summary="Returns a list of all configured services")
+async def all_services():
+    '''
+    once you have the list of services, you can call each one separately to get the descriptoin of parameters to give to end-users;
+    for example, this to get the full schema forthe parameters required for submitting an object to be loaded by a data provider:
+    /services/schema/{service_id}
+    Aside: this is done internally by requesting the openapi.json from the fastapi-enabled service, similar to:
+    curl -X 'GET' 'fuse-provider-upload:8000/openapi.json
+    '''
+    return _get_services("")
 
 def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
@@ -341,31 +391,6 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
     }
     logger.info(msg=f"[delete_submitter] returning ({ret})\n")
     return ret
-
-@app.get("/provider_parameters", summary="convenience function to get the submit parameters for a provider service")
-async def get_submit_parameters(service_id: str = Query(default="fuse-provider-upload", describe="loop through /providers to retrieve the submit parameters for each, allowing the end user to load in datasets as desired")):
-    '''
-    Only works for containers on the same 'fuse-agent_fuse' network as this agent; consequently, containers must be hosted on the same machine.
-    '''
-    import requests
-    response = requests.get(f"http://{service_id}:8000/openapi.json")# xxx won't work, needs to be on same docker network!
-    json_obj = response.json()
-    return json_obj['paths']['/submit']['post']['parameters'] # prints the string with 'source_name' key
-
-
-
-    
-# xxx can we build an enum class dynamically from the providers list?
-#@app.post("/load", summary="load a dataset for analysis")
-#async def load(parameters: ProviderParameters,
-#               files: Optional[List[UploadFile]] = File(...),
-#               ):
-    '''
-    params:
-     - provider url
-     - provider parameter values
-    returns object_id
- '''
 
 @app.get("/objects/{object_id}", summary="get metadata for the object")
 async def get_object():

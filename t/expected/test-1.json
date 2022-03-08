@@ -1,20 +1,4 @@
-{
-  "configuredServices": {
-    "providers": [
-      {
-        "URL": "http://fuse-provider-upload:8000",
-        "container-network": "fuse",
-        "id": "fuse-provider-upload",
-        "title": "Custom data"
-      }
-    ],
-    "tools": [
-      {
-        "URL": "http://fuse-tool-pca:8000",
-        "container-network": "fuse",
-        "id": "fuse-tool-pca",
-        "title": "Principal Components Analyzer"
-      }
-    ]
-  }
-}
+[
+  "fuse-provider-upload",
+  "fuse-tool-pca"
+]
