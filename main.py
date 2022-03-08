@@ -12,6 +12,7 @@ from typing import Type, Optional, List, Union, Dict
 from enum import Enum
 from starlette.responses import StreamingResponse
 
+import requests
 from bson.json_util import dumps, loads
 
 import traceback
@@ -245,7 +246,6 @@ def _resolveRefs(doc, models):
 @app.get("/services/schema/{service_id}", summary="returns the schema for the submit parameters required by the given service")
 async def get_submit_parameters(service_id: str = Query(default="fuse-provider-upload", describe="loop through /providers or /tools to retrieve the submit parameters for each, providing the dashboard with everything it needs to render forms and solicit all the necessary information from the end user in order to load in datasets and/or run analyses")):
     try: 
-        import requests
         response = requests.get(f"{_get_url(service_id)}/openapi.json")
         json_obj = response.json()
         params = json_obj['paths']['/submit']['post']['parameters'] 
@@ -391,72 +391,88 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
 
+from multiprocessing import Process
 from redis import Redis
 from rq import Queue, Worker
 from rq.job import Job
 from rq.decorators import job
-g_redis_defaut_timeout = 3600
+g_redis_default_timeout = 3600
 g_redis_connection = Redis(host='agent-redis', port=6379, db=0) 
 g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
 def _initWorker():
     worker = Worker(g_queue, connection=g_redis_connection)
     worker.work()
 
-@job('low', connection=g_redis_connection, timeout=g_redis_default_timeout)
+# xxx  does this ever get called?
+# @job('low', connection=g_redis_connection, timeout=g_redis_default_timeout)
 def _remote_submit_object(service_id, object_id, parameters):
     try:
+        logger.info(msg=f"[_remote_submit_object] top of job")
         timeout_seconds = g_redis_default_timeout # xxx read this from config.json, what's reasonable here?
         import requests
-        foreign_object_id = None # set this early in case there's an exception
-        mongo_uploads.update_one({"object_id": object_id},
+        service_object_id = None # set this early in case there's an exception
+        host_url = _get_url(service_id)
+        mongo_objects.update_one({"object_id": object_id},
                                  {"$set": {
-                                     "status": "started"
+                                     "service_host_url": host_url,
+                                     "agent_status": "started"
                                  }})
-        host_url = _get_url(service_id)}
         logger.info(msg=f"[_remote_submit_object] host_url={host_url}")
-        submit_url=f"{host_url/submit"
+        submit_url=f"{host_url}/submit"
         logger.info(msg=f"[_remote_submit_object] posting to url={submit_url}")
-        response = requests.post(url, data = parameters, timeout=timeout_seconds)
+        response = requests.post(submit_url, data = parameters, timeout=timeout_seconds)
         json_obj = response.json()
         logger.info(msg=f"[_remote_submit_object] response={json.dumps(json_obj, indent=4)}")
         # xxx create unique local object_id and map it to the host url and object id for this service for retrieving later
-        foreign_object_id = json_obj["object_id"]
+        service_object_id = json_obj["object_id"]
         mongo_objects.update_one({"object_id": object_id},
                                  {"$set": {
-                                     "foreign_object_id": foreign_object_id,
-                                     "status": "finished"
+                                     "service_object_id": service_object_id,
+                                     "agent_status": "finished"
                                  }})
     except Exception as e:
-        mongo_objects.update_one({"object_id": object_id},
-                                 {"$set": {
-                                     "foreign_object_id": foreign_object_id,
-                                     "status": "failed"
-                                 }})
+        try:
+            detail_str=f'Exception {type(e)} occurred while submitting object to service, obj=({object_id}), service_object_id=({service_object_id}) message=[{e}] \n! traceback=\n{traceback.format_exc()}\n'
+            mongo_objects.update_one({"object_id": object_id},
+                                     {"$set": {
+                                         "service_object_id": service_object_id,
+                                         "agent_status": "failed",
+                                         "detail": f'[_remote_submit_object]: {detail_str}'
+                                     }})
+        except:
+            logger.error(msg=f'[_remote_submit_object] ! unable to update object to failed.')
         
 @app.post("/objects/load", summary="load object metadata and data from an end user or a 3rd party server")
 async def post_object(submitter_id: Optional[str] = Query(default=None, description="unique identifier for the submitter (e.g., email)"),
                       service_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)"),
-                      parameters: Dict = Query(default=None, description="parameters to pass to service_id, use /services/schema to retrieve required parameters")):
+                      request_url: str = Query(default=None, description="string form of json parameters to pass to service_id, use /services/schema to retrieve required parameters"),
+                      client_file: Optional[UploadFile] = File(...)
+                      ):
     '''
     warning: executing this repeatedly for the same service/object will create duplicates in the database
+    example request_url: submitter_id=krobasky%40renci.org&data_type=dataset-geneExpression&version=1.0
     '''
     try:
-        timeout_seconds = g_default_timeout # read this from config.json for the service xxx
-        logger.info(msg=f"[get_results] submitter={submitter_id}, posting params={parameters} to service_id={service_id}, timeout_seconds={timeout_seconds}")
         import uuid
         local_object_id = str(uuid.uuid4())
+        timeout_seconds = g_redis_default_timeout # read this from config.json for the service xxx
+        logger.info(msg=f"[post_object] submitter={submitter_id}, posting request_url={request_url} to service_id={service_id}, timeout_seconds={timeout_seconds}")
         job_id = str(uuid.uuid4())
+        # xxx replace this with a ProviderObject model instance
         provider_object = {"object_id": local_object_id,
                            "submitter_id": submitter_id,
-                           "service_host_url": host_url,
-                           "foreign_object_id": foreign_object_id,
+                           "service_object_id": None,
+                           "service_host_url": 1,
                            "job_id": job_id,
-                           "status": None,
+                           "agent_status": None,
+                           "detail": None,
                            }
-        mongo_objects.insert(provider_object.dict())
-        logger.info(msg=f"[get_results] created provider object={json.dumps(provider_object, indent=4)}")
-        g_queue.enqueue(func=_remote_submit_object,
-                        args=(service_id, local_object_id, parameters),
+        # mongo_objects.insert(provider_object.dict())
+        mongo_objects.insert(provider_object)
+        logger.info(msg=f"[post_object] created provider object: object_id:{local_object_id}, submitter_id:{submitter_id}, job_id:{job_id}")
+        # stream the file locally, unhook it when you get into the job
+        g_queue.enqueue(_remote_submit_object,
+                        args=(service_id, local_object_id, request_url),
                         timeout=timeout_seconds,
                         job_id=job_id,
                         result_ttl=-1)
@@ -464,20 +480,26 @@ async def post_object(submitter_id: Optional[str] = Query(default=None, descript
         p_worker = Process(target=_initWorker)
         p_worker.start()
         # xxx should this be p_worker.work()?
-        mongo_objects.update_one({"object_id": object_id},
+        mongo_objects.update_one({"object_id": local_object_id},
                                  {"$set": {
-                                     "status": "queued"
+                                     "agent_status": "queued"
                                  }})
         
         return {"object_id",local_object_id}
     except Exception as e:
         # xxx log error in database
-        mongo_objects.update_one({"object_id": object_id},
-                                 {"$set": {
-                                     "status": "failed"
-                                 }})
+        detail_str = f'Exception {type(e)} occurred while loading object to service=[{service_id}], \n request_url=[{request_url}] \n message=[{e}] \n! traceback=\n{traceback.format_exc()}\n'
+        try:
+            mongo_objects.update_one({"object_id": local_object_id},
+                                     {"$set": {
+                                         "agent_status": "failed",
+                                         "detail": f'{detail_str}'
+                                     }})
+        except:
+            logger.error(msg=f"[post_object] ! unable to change local_object_id to agent_status=failed")
+        logger.error(msg=f"[post_object] ! {detail_str}")
         raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while loading object to service=[{serice_id}], \n parameters=[{parameters}] \n message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! {detail_str}")
     
     
 
@@ -499,11 +521,44 @@ async def get_objects(submitter_id: str = Query(default=None, description="uniqu
 
 # xxx is this necessary? maybe just return status instead?
 @app.get("/objects/{object_id}", summary="get metadata for the object")
-async def get_object():
+async def get_object(object_id: str = Query(default=None, description="unique identifier on agent to retrieve previously loaded object")):
     '''
-    gets object metadata, including link to object
-    Includes status and links to the input dataset, parameters, and dataset results
+    gets object's status and remote metadata
+    Includes status and links to the input dataset, parameters, and dataset results if this object was created by a tool service
     '''
+    try:
+        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0,
+                                                            "submitter_id": 1,
+                                                            "service_object_id": 1,
+                                                            "job_id": 1,
+                                                            "agent_status": 1,
+                                                            "detail": 1,
+                                                            "service_host_url": 1,
+                                                            "object_id": 1})
+        assert entry.count() == 1
+        obj = entry[0]
+        if not "agent_status" in obj.keys():
+            if "status" in obj.keys():
+                obj["agent_status"] = obj["status"]
+            else:
+                obj["agent_status"] = "unknown"
+            
+        logger.info(msg=f'[get_object] found local object, agent_status={obj["agent_status"]}')
+        
+        if obj["agent_status"] == "finished":
+            response = requests.get(f'{obj["service_host_url"]}/objects/{obj["service_object_id"]}')
+            service_obj_metadata = response.json()
+            service_obj_metadata["agent_status"] = obj["agent_status"]
+            return service_obj_metadata
+        else:
+            return {"agent_status": obj["agent_status"],
+                    "detail": obj["detail"],
+                    }
+
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+    
 
 # xxx is this unecessary? can we just get the url from the provider at time of submission, cache it, and ignore the drs?
 '''
@@ -531,22 +586,23 @@ def _parse_drs(drs_uri):
 '''
 
 from starlette.responses import StreamingResponse
-@app.post("/objects/url/{object_id}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
+@app.get("/objects/url/{object_id}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
 async def get_url(object_id: str):
     '''
     '''
     try:
-        entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "foreign_object_id": 1, "service_host_url": 1, "status": 1 })
+        logger.info(msg=f"[get_url] find local object={object_id}")
+        entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "service_object_id": 1, "service_host_url": 1, "agent_status": 1 })
         assert entry.count() == 1
         obj = entry.next()
-        logger.info(msg=f"[get_url] found local object={json.dumps(obj,indent=4)}")
-        assert obj["status"] == "finished":
-        obj_url = f'{obj["host_url"]}/files/{obj["foreign_object_id"]}'
+        logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
+        assert obj["agent_status"] == "finished"
+        obj_url = f'{obj["host_url"]}/files/{obj["service_object_id"]}'
         logger.info(msg=f"[get_url] built url = ={obj_url}")
-        return return obj_url
+        return obj_url
     except Exception as e:
         raise HTTPException(status_code=500,
-                            detail="! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
         
     '''
     # xxx this is all unecessary?:
