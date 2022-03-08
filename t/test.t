@@ -57,19 +57,19 @@ files_eq(f($fn), cmd("GET",    $fn, "services/providers"),                      
 $fn = "test-3.json";
 files_eq(f($fn), cmd("GET",    $fn, "services/tools"),                                                            "Get tools configured for this agent");
 $fn = "test-4.json";
-files_eq(f($fn), cmd("POST",    $fn, "add/submitter?submitter_id=${SUBMITTER_ID}", "-H 'accept: application/json' -d ''"),
+files_eq(f($fn), cmd("POST",    $fn, "submitters/add?submitter_id=${SUBMITTER_ID}", "-H 'accept: application/json' -d ''"),
 	                                                                                                          "Create submitter");
 $fn = "test-5.json";
-files_eq(f($fn), cmd("POST",    $fn, "add/submitter?submitter_id=${SUBMITTER_ID}", "-H 'accept: application/json' -d ''"),
+files_eq(f($fn), cmd("POST",    $fn, "submitters/add?submitter_id=${SUBMITTER_ID}", "-H 'accept: application/json' -d ''"),
 	                                                                                                          "Try to create same submitter again");
 $fn = "test-6.json";
-files_eq(f($fn), cmd("GET",    $fn, "search/submitters?within_minutes=1"),                                        "Get list of very recently created submitters");
+files_eq(f($fn), cmd("GET",    $fn, "submitters/search?within_minutes=1"),                                        "Get list of very recently created submitters");
 $fn = "test-7.json";
-generalize_output($fn, cmd("GET", rawf($fn), "submitter/{$SUBMITTER_ID}"), ["created_time"]);
+generalize_output($fn, cmd("GET", rawf($fn), "submitters/{$SUBMITTER_ID}"), ["created_time"]);
 files_eq(f($fn), "t/out/${fn}",                                                                                   "Get submitter metadata");
 $fn = "test-8.json";
-files_eq(f($fn), cmd("DELETE",    $fn, "delete/submitter/${SUBMITTER_ID}"),                                       "Delete submitters");
+files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Delete submitters");
 $fn = "test-9.json";
-files_eq(f($fn), cmd("DELETE",    $fn, "delete/submitter/${SUBMITTER_ID}"),                                       "Try to delete same submitter again");
+files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Try to delete same submitter again");
 
 

@@ -277,7 +277,7 @@ async def all_services():
 def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
 
-@app.post("/add/submitter", summary="Create a record for a new submitter")
+@app.post("/submitters/add", summary="Create a record for a new submitter")
 async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     Add a new submitter
@@ -309,22 +309,7 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
                             detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
         
 
-@app.get("/submitter/{submitter_id}", summary="Return metadata associated with submitter")
-async def get_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
-    try:
-        object_id = _submitter_object_id(submitter_id)
-        entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
-        logger.info(msg=f"[submitter]found ({entry.count()}) matches for object_id={object_id}")
-        if entry.count() != 1:
-            raise Exception(f"Wrong number of submitters found for [{object_id}], entries found = {entry.count()}")
-        ret_val = entry[0]
-        logger.info(msg=f"[submitter] returning: {ret_val}")
-        return ret_val
-    except Exception as e:
-        raise HTTPException(status_code=404,
-                            detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
-    
-@app.get("/search/submitters", summary="Return a list of known submitters")
+@app.get("/submitters/search", summary="Return a list of known submitters")
 async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
     '''
     return list of submitters
@@ -352,7 +337,7 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
     
-@app.delete("/delete/submitter/{submitter_id}", summary="Remove a submitter record")
+@app.delete("/submitters/delete/{submitter_id}", summary="Remove a submitter record")
 async def delete_submitter(submitter_id: str= Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     deletes submitter and their datasets, analyses
@@ -392,6 +377,21 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
     logger.info(msg=f"[delete_submitter] returning ({ret})\n")
     return ret
 
+@app.get("/submitters/{submitter_id}", summary="Return metadata associated with submitter")
+async def get_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
+    try:
+        object_id = _submitter_object_id(submitter_id)
+        entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
+        logger.info(msg=f"[submitter]found ({entry.count()}) matches for object_id={object_id}")
+        if entry.count() != 1:
+            raise Exception(f"Wrong number of submitters found for [{object_id}], entries found = {entry.count()}")
+        ret_val = entry[0]
+        logger.info(msg=f"[submitter] returning: {ret_val}")
+        return ret_val
+    except Exception as e:
+        raise HTTPException(status_code=404,
+                            detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
+    
 @app.get("/objects/{object_id}", summary="get metadata for the object")
 async def get_object():
     '''
