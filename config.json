@@ -4,7 +4,7 @@
     "fuse-provider-upload": {
       "title": "Custom data",
       "container-network": "fuse",
-      "container_URL": "http://fuse-provider-upload:8000",
+      "container_URL": "http://localhost:8083",
       "host_name": "localhost",
       "host_port": "8083"
     },

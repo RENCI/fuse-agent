@@ -33,7 +33,23 @@ export LC_CTYPE=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 ```
 
+### for dev environment:
+* run a mongodb server:
+On your local host, you can't connect to the mongodb server in tx-persistent outside of a container.
+To run `python main.py`, install a mongodb server and run it something like this:
+```
+mkdir -p ~/data/db
+sudo mongod --dbpath ~/data/db
+# in a separate shell, test deployment:
+mongosh "mongodb://localhost:27017"
+# ^C in original shell to exit
 
+```
+* run the application:
+set up a dev config.json in the root directory
+```
+python main.py
+```
 
 ### tips for updating docker-compose on Centos:
 
