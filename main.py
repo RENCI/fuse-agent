@@ -351,9 +351,9 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
     try:
         object_id = _submitter_object_id(submitter_id)
         entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
-        logger.info(msg=f"[submitter]found ({entry.count()}) matches for object_id={object_id}")
-        if entry.count() != 1:
-            raise Exception(f"Wrong number of submitters found for [{object_id}], entries found = {entry.count()}")
+        num_matches = _mongo_count("submitter", mongo_submitters, {"object_id": object_id},{"_id":0})
+        logger.info(msg=f"[submitter]found ({num_matches}) matches for object_id={object_id}")
+        assert num_matches == 1
         ret_val = entry[0]
         logger.info(msg=f"[submitter] returning: {ret_val}")
         return ret_val
@@ -440,24 +440,15 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             'accept': 'application/json',
             'Content-Type': 'multipart/form-data',
         }
-        # "data_type": file_type,
-        #obj["parameters"]["submitter_id"],
+        # "data_type": file_type, # xxx 
         params = {
-            "submitter_id": "krobasky@renci.org",
-            "data_type": "dataset-geneExpression",
+            "submitter_id": obj["parameters"]["submitter_id"],
+            "data_type": "dataset-geneExpression", # xxx fix this!!
             "version": "1.0"
         }
         logger.info(msg=f"params={json.dumps(params)}")
-        #files = {'client_file': {f'{agent_file_name};type', open(agent_file_path, 'rb')}}
-        files = {'client_file': (open(agent_file_path, 'rb')) }
+        files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
         response = requests.post(submit_url, params=params, files=files)
-        '''
-        curl -X 'POST' \    
-        'http://localhost:8083/submit?submitter_id=krobasky%40renci.org&data_type=dataset-geneExpression&version=1.0' \
-        -H 'accept: application/json' \
-        -H 'Content-Type: multipart/form-data' \
-        -F 'client_file=@data/b085b9ec-6ea4-402e-b4db-97a834693d4a-data/phenotypes.csv;type=text/csv'
-        '''
 
         #response = requests.post('http://localhost:8083/submit?submitter_id=krobasky%40gmail.com&data_type=dataset-geneExpression&version=1.0', headers=headers, files=files)
         #response = requests.post(submit_url,
@@ -472,6 +463,13 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             json_obj = response.json()
             logger.info(msg=f"[_remote_submit_file] response={json.dumps(json_obj, indent=4)}")
             service_object_id = json_obj["object_id"]
+            logger.info(msg=f"[_remote_submit_file] service_object_id={service_object_id}")
+            # xxx map the returned service_object_id back onto the agent_object_id but updatin that object
+            m_objects.update_one({"object_id": agent_object_id},
+                                 {"$set": {
+                                     "service_object_id": service_object_id,
+                                 }})
+            ''' xxx ??? figure out how to handle a zipfile now
             loaded_file_objects = obj.file_objects.append({file_type: service_object_id})
             m_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
@@ -479,6 +477,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                          "agent_status": _set_agent_status(obj["parameters"]["accession_id"], obj["parameters"]["service_object_id"],
                                                                            obj["parameters"]["num_files_requested"],len(loaded_file_objects))
                                       }})
+            '''
         else:
             detail_str = f'status_code={response.status_code}, response={response.text}'
             logger.error(msg=f"[_remote_submit_file] ! {detail_str}")
@@ -491,6 +490,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         # unlink directory after all files have been processed
         if agent_file_dir is not None:
             os.rmdir(os.path.split(agent_file_dir))
+
 
     except Exception as e:
         detail_str += f"! Exception {type(e)} occurred while posting files, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
@@ -620,47 +620,6 @@ async def get_objects(submitter_id: str = Query(default=None, description="uniqu
                             detail="! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
 
 
-# xxx is this necessary? maybe just return status instead?
-@app.get("/objects/{object_id}", summary="get metadata for the object")
-async def get_object(object_id: str = Query(default=None, description="unique identifier on agent to retrieve previously loaded object")):
-    '''
-    gets object's status and remote metadata
-    Includes status and links to the input dataset, parameters, and dataset results if this object was created by a tool service
-    '''
-    try:
-        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0,
-                                                            "submitter_id": 1,
-                                                            "service_object_id": 1,
-                                                            "job_id": 1,
-                                                            "agent_status": 1,
-                                                            "detail": 1,
-                                                            "service_host_url": 1,
-                                                            "object_id": 1})
-        assert entry.count() == 1
-        obj = entry[0]
-        if not "agent_status" in obj.keys():
-            if "status" in obj.keys():
-                obj["agent_status"] = obj["status"]
-            else:
-                obj["agent_status"] = "unknown"
-            
-        logger.info(msg=f'[get_object] found local object, agent_status={obj["agent_status"]}')
-        
-        if obj["agent_status"] == "finished":
-            response = requests.get(f'{obj["service_host_url"]}/objects/{obj["service_object_id"]}')
-            service_obj_metadata = response.json()
-            service_obj_metadata["agent_status"] = obj["agent_status"]
-            return service_obj_metadata
-        else:
-            return {"agent_status": obj["agent_status"],
-                    "detail": obj["detail"],
-                    }
-
-    except Exception as e:
-        raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
-    
-
 # xxx is this unecessary? can we just get the url from the provider at time of submission, cache it, and ignore the drs?
 '''
 def _parse_drs(drs_uri):
@@ -694,7 +653,7 @@ async def get_url(object_id: str):
     try:
         logger.info(msg=f"[get_url] find local object={object_id}")
         entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "service_object_id": 1, "service_host_url": 1, "agent_status": 1 })
-        assert entry.count() == 1
+        assert _mongo_count("get_url", mongo_objects, {"object_id":object_id}, {"_id"}) == 1
         obj = entry.next()
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
         assert obj["agent_status"] == "finished"
@@ -727,6 +686,48 @@ async def get_url(object_id: str):
         raise HTTPException(status_code=404,
                             detail="! Exception {type(e)} occurred while retrieving for ({drs}), server({url}) message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
     '''
+
+# xxx is this necessary? maybe just return status instead?
+@app.get("/objects/{object_id}", summary="get metadata for the object")
+async def get_object(object_id: str = Query(default=None, description="unique identifier on agent to retrieve previously loaded object")):
+    '''
+    gets object's status and remote metadata
+    Includes status and links to the input dataset, parameters, and dataset results if this object was created by a tool service
+    '''
+    try:
+        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0,
+                                                            "submitter_id": 1,
+                                                            "service_object_id": 1,
+                                                            "job_id": 1,
+                                                            "agent_status": 1,
+                                                            "detail": 1,
+                                                            "service_host_url": 1,
+                                                            "object_id": 1})
+
+        assert _mongo_count("get_object", mongo_objects, {"object_id":object_id}, {"_id"}) == 1        
+        obj = entry[0]
+        if not "agent_status" in obj.keys():
+            if "status" in obj.keys():
+                obj["agent_status"] = obj["status"]
+            else:
+                obj["agent_status"] = "unknown"
+            
+        logger.info(msg=f'[get_object] found local object, agent_status={obj["agent_status"]}')
+        
+        if obj["agent_status"] == "finished":
+            response = requests.get(f'{obj["service_host_url"]}/objects/{obj["service_object_id"]}')
+            service_obj_metadata = response.json()
+            service_obj_metadata["agent_status"] = obj["agent_status"]
+            return service_obj_metadata
+        else:
+            return {"agent_status": obj["agent_status"],
+                    "detail": obj["detail"],
+                    }
+
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+    
 
 @app.post("/analyze", summary="submit an analysis")
 async def analyze():
