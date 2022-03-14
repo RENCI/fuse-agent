@@ -879,8 +879,10 @@ async def get_object(object_id: str = Query(default=None, description="unique id
             service_obj_metadata = response.json()
             logger.info(msg=f'[get_object] metadata={service_obj_metadata}')
 
-        obj["provider"] = service_obj_metadata
-        return obj
+        new_obj={}
+        new_obj["agent"]= obj
+        new_obj["provider"] = service_obj_metadata
+        return new_obj
 
     except Exception as e:
         raise HTTPException(status_code=404,

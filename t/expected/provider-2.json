@@ -1,24 +1,4 @@
 {
-  "agent_status": "finished",
-  "created_time": "xxx",
-  "detail": null,
-  "job_id": "xxx",
-  "loaded_file_objects": [],
-  "num_files_requested": 1,
-  "object_id": "test_object_id",
-  "parameters": {
-    "accession_id": null,
-    "aliases": null,
-    "apikey": null,
-    "checksums": null,
-    "data_type": "dataset-geneExpression",
-    "description": null,
-    "service_id": "fuse-provider-upload",
-    "submitter_id": "test@email.com",
-    "version": "1.0"
-  },
-  "provider": "xxx",
-  "service_host_url": "http://fuse-provider-upload:8000",
-  "service_object_id": "xxx",
-  "updated_time": "xxx"
+  "agent": "xxx",
+  "provider": "xxx"
 }

@@ -86,8 +86,10 @@ files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${OBJID}",
 		     "-H 'Content-Type: multipart/form-data' -H 'accept: application/json'"),
 	                                                                                                   "($fn) Submit csv file");
 sleep(1); # wait for job queue to catch up
+
+# currently, there is no nested value generalizer so the following is just a smoke-test that an object is found.
 $fn = "provider-2.json";
-generalize_output($fn, cmd("GET", rawf($fn), "objects/{$OBJID}"), ["created_time", "updated_time", "job_id","provider","service_object_id"]);
+generalize_output($fn, cmd("GET", rawf($fn), "objects/{$OBJID}"), ["agent","provider"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get info about csv DRS object");
 
 #$fn = "provider-3.json";
