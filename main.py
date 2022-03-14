@@ -708,12 +708,15 @@ async def get_url(object_id: str):
     '''
     try:
         logger.info(msg=f"[get_url] find local object={object_id}")
-        entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "service_object_id": 1, "service_host_url": 1, "agent_status": 1 })
+        entry = mongo_objects.find({"object_id": object_id},{"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id":object_id}) == 1
         obj = entry.next()
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
+        logger.info(msg=f'[get_url] obj={obj}')
         assert obj["agent_status"] == "finished"
-        obj_url = f'{obj["host_url"]}/files/{obj["service_object_id"]}'
+        host_url = obj["service_host_url"]
+        service_object_id = obj["service_object_id"]
+        obj_url = f'{host_url}/files/{service_object_id}'
         logger.info(msg=f"[get_url] built url = ={obj_url}")
         return obj_url
     except Exception as e:
