@@ -251,44 +251,42 @@ async def all_services():
 def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
 
+def api_add_submitter(submitter_id: str):
+    object_id = _submitter_object_id(submitter_id)
+    num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
+    if num_matches != 0:
+        raise Exception(f"Submitter already added as: {object_id}, entries found = {num_matches}")
+        
+    submitter_object = Submitter(
+        object_id = object_id,
+        submitter_id = submitter_id,
+        created_time = datetime.utcnow(),
+        status = SubmitterStatus.approved)
+    
+    logger.info(msg=f"[api_add_submitter] submitter_object={submitter_object}")
+    _mongo_insert(mongo_submitters, submitter_object.dict())
+    logger.info(msg="[api_add_submitter] submitter added.")
+
+    ret_val = {"submitter_id": submitter_id}
+    logger.info(msg=f"[api_add_submitter] returning: {ret_val}")
+    return ret_val
+    
+    
 @app.post("/submitters/add", summary="Create a record for a new submitter")
 async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     Add a new submitter
     '''
     try:
-        object_id = _submitter_object_id(submitter_id)
-        num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
-        if num_matches != 0:
-            raise Exception(f"Submitter already added as: {object_id}, entries found = {num_matches}")
-        
-        submitter_object = Submitter(
-            object_id = object_id,
-            submitter_id = submitter_id,
-            created_time = datetime.utcnow(),
-            status = SubmitterStatus.approved)
-
-        logger.info(msg=f"[add_submitter] submitter_object={submitter_object}")
-        _mongo_insert(mongo_submitters, submitter_object.dict())
-        logger.info(msg="[add_submitter] submitter added.")
-
-        ret_val = {"submitter_id": submitter_id}
-        logger.info(msg=f"[add_submitter] returning: {ret_val}")
-        return ret_val
+        return api_add_submitter(submitter_id)
     except Exception as e:
-        logger.info(msg=f"[add_submitter] exception, setting upload status to failed for {object_id}")
+        logger.info(msg=f"[add_submitter] exception, ! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         
-
-@app.get("/submitters/search", summary="Return a list of known submitters")
-async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
-    '''
-    return list of submitters
-    '''
-    try:
+def api_get_submitters(within_minutes:int = None):
         if within_minutes != None:
-            logger.info(msg=f"[submitters] get submitters created within the last {within_minutes} minutes.")
+            logger.info(msg=f"[api_get_submitters] get submitters created within the last {within_minutes} minutes.")
             until_time = datetime.utcnow()
             within_minutes_time = timedelta(minutes=within_minutes)
             from_time = until_time - within_minutes_time
@@ -299,12 +297,19 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
                 }
             }
         else:
-            logger.info(msg="[submitters] get all.")
+            logger.info(msg="[api_get_submitters] get all.")
             search_object = {}
         ret = list(map(lambda a: a, mongo_submitters.find(search_object, {"_id": 0, "submitter_id": 1})))
-        logger.info(msg=f"[submitters] ret:{ret}")
+        logger.info(msg=f"[api_get_submitters] ret:{ret}")
         return ret
-    
+
+@app.get("/submitters/search", summary="Return a list of known submitters")
+async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
+    '''
+    return list of submitters
+    '''
+    try:
+        return api_get_submitters(within_minutes)
     except Exception as e:
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] ! traceback={traceback.format_exc()}")
@@ -349,17 +354,23 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
     logger.info(msg=f"[delete_submitter] returning ({ret})")
     return ret
 
+def api_get_submitter(submitter_id):
+    '''
+     Expects exactly 1 match, throws exception otherwise
+    '''
+    object_id = _submitter_object_id(submitter_id)
+    entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
+    num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
+    logger.info(msg=f"[api_get_submitter]found ({num_matches}) matches for object_id={object_id}")
+    assert num_matches == 1
+    ret_val = entry[0]
+    logger.info(msg=f"[api_get_submitter] returning: {ret_val}")
+    return ret_val
+    
 @app.get("/submitters/{submitter_id}", summary="Return metadata associated with submitter")
 async def get_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     try:
-        object_id = _submitter_object_id(submitter_id)
-        entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
-        num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
-        logger.info(msg=f"[submitter]found ({num_matches}) matches for object_id={object_id}")
-        assert num_matches == 1
-        ret_val = entry[0]
-        logger.info(msg=f"[submitter] returning: {ret_val}")
-        return ret_val
+        return api_get_submitter(submitter_id)
     except Exception as e:
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")    
@@ -555,7 +566,13 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     '''
     logger.info(msg=f"[post_object] top")
     try:
-        # xxx add submitter  to submitters collection
+        logger.info("[post_object] adding submitter to submitters collection, as needed")
+        try:
+            submitter_object_id = api_get_submitter(parameters.submitter_id)
+        except Exception as e:
+            logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
+            api_add_submitter(parameters.submitter_id)
+        
         client_file_dict = {
             "filetype-dataset-archive": optional_file_archive,
             "filetype-dataset-expression": optional_file_expressionMatrix,

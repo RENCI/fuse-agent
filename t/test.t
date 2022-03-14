@@ -68,7 +68,7 @@ $fn = "test-7.json";
 generalize_output($fn, cmd("GET", rawf($fn), "submitters/{$SUBMITTER_ID}"), ["created_time"]);
 files_eq(f($fn), "t/out/${fn}",                                                                                   "Get submitter metadata");
 $fn = "test-8.json";
-files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Delete submitters");
+files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Delete submitter");
 $fn = "test-9.json";
 files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Try to delete same submitter again");
 
@@ -99,6 +99,6 @@ files_eq(f($fn), "t/out/${fn}",                                                 
 
 $fn = "provider-4.json";
 files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object (not found)");
-$fn = "provider-4.json";
-files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object (not found)");
 
+$fn = "provider-5.json";
+files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                 "Delete submitter created by post");
