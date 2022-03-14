@@ -1,3 +1,3 @@
 {
-  "detail": "! Exception <class 'Exception'> occurred while inserting submitter (test@email.com), message=[Submitter already added as: agent_test@email.com, entries found = 1] \n! traceback=\nTraceback (most recent call last):\n  File \"./app/main.py\", line 291, in add_submitter\n    raise Exception(f\"Submitter already added as: {object_id}, entries found = {entry.count()}\")\nException: Submitter already added as: agent_test@email.com, entries found = 1\n\n"
+  "detail": "! Exception <class 'Exception'> occurred while inserting submitter (test@email.com), message=[Submitter already added as: agent_test@email.com, entries found = 1] ! traceback=Traceback (most recent call last):\n  File \"./app/main.py\", line 263, in add_submitter\n    raise Exception(f\"Submitter already added as: {object_id}, entries found = {num_matches}\")\nException: Submitter already added as: agent_test@email.com, entries found = 1\n"
 }

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import dateutil.parser
 import inspect
 import os
+import shutil
 
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Query
 from fastapi.logger import logger
@@ -19,6 +20,8 @@ import requests
 import pathlib
 import json
 
+import nest_asyncio
+nest_asyncio.apply()
 
 #from bson.json_util import dumps, loads
 
@@ -131,23 +134,23 @@ mongo_submitters=mongo_db.submitters
 mongo_objects=mongo_db.objects
 
 # mongo migration functions to support running outside of container with more current instance
-def _mongo_insert(fn, coll, obj):
+def _mongo_insert(coll, obj):
         if mongo_db_major_version < 4:
-            logger.info(msg=f"[{fn}] using collection.insert")
+            logger.info(msg=f"[_mongo_insert] using collection.insert")
             coll.insert(obj)
         else:
-            logger.info(msg=f"[{fn}] using collection.insert_one")
+            logger.info(msg=f"[mongo_insert] using collection.insert_one")
             coll.insert_one(obj)
 
-def _mongo_count(fn, coll, obj, projection):
+def _mongo_count(coll, obj):
     if mongo_db_major_version < 3 and mongo_db_minor_version < 7:
-        logger.info(msg=f"[{fn}] mongodb version = {mongo_db_version}, use deprecated entry count function")
-        entry = coll.find(obj, projection)
+        logger.info(msg=f"[_mongo_count] mongodb version = {mongo_db_version}, use deprecated entry count function")
+        entry = coll.find(obj, {})
         num_matches= entry[0].count()
     else: 
-        logger.info(msg=f"[{fn}] mongo_db version = {mongo_db_version}, use count_documents function")
+        logger.info(msg=f"[_mongo_count] mongo_db version = {mongo_db_version}, use count_documents function")
         num_matches=coll.count_documents(obj)
-    logger.info(msg=f"[{fn}]found ({num_matches}) matches")
+    logger.info(msg=f"[_mongo_count]found ({num_matches}) matches")
     return num_matches
 # end mongo migration functions
             
@@ -232,7 +235,7 @@ async def get_submit_parameters(service_id: str = Query(default="fuse-provider-u
         return params
     except Exception as e:
         raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while retrieving input schema for service submit, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! Exception {type(e)} occurred while retrieving input schema for service submit, message=[{e}] ! traceback={traceback.format_exc()}")
 
 @app.get("/services", summary="Returns a list of all configured services")
 async def all_services():
@@ -255,7 +258,7 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
     '''
     try:
         object_id = _submitter_object_id(submitter_id)
-        num_matches = _mongo_count("add_submitter", mongo_submitters, {"object_id": object_id}, {"_id": 0, "submitter_id": 1})
+        num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
         if num_matches != 0:
             raise Exception(f"Submitter already added as: {object_id}, entries found = {num_matches}")
         
@@ -266,7 +269,7 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
             status = SubmitterStatus.approved)
 
         logger.info(msg=f"[add_submitter] submitter_object={submitter_object}")
-        _mongo_insert("add_submitter", mongo_submitters, submitter_object.dict())
+        _mongo_insert(mongo_submitters, submitter_object.dict())
         logger.info(msg="[add_submitter] submitter added.")
 
         ret_val = {"submitter_id": submitter_id}
@@ -275,7 +278,7 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
     except Exception as e:
         logger.info(msg=f"[add_submitter] exception, setting upload status to failed for {object_id}")
         raise HTTPException(status_code=404,
-                            detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         
 
 @app.get("/submitters/search", summary="Return a list of known submitters")
@@ -304,7 +307,7 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
     
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] ! traceback={traceback.format_exc()}")
     
 @app.delete("/submitters/delete/{submitter_id}", summary="Remove a submitter record")
 async def delete_submitter(submitter_id: str= Query(default=None, description="unique identifier for the submitter (e.g., email)")):
@@ -321,7 +324,7 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
         delete_status = "deleted"
         if ret.acknowledged != True:
             delete_status = "failed"
-            ret_mongo += "ret.acknoledged not True.\n"
+            ret_mongo += "ret.acknoledged not True."
             logger.error(msg="[delete_submitter] delete failed, ret.acknowledged ! = True")
         if ret.deleted_count != 1:
             # should never happen if index was created for this field
@@ -334,8 +337,8 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
         ##
         ret_mongo += f"Deleted count=({ret.deleted_count}), Acknowledged=({ret.acknowledged})./n"
     except Exception as e:
-        logger.error(msg=f"[delete_submitter] Exception {type(e)} occurred while deleting {submitter_id} from database, message=[{e}]\n")
-        ret_mongo_err += f"! Exception {type(e)} occurred while deleting {submitter_id}) from database, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
+        logger.error(msg=f"[delete_submitter] Exception {type(e)} occurred while deleting {submitter_id} from database, message=[{e}]")
+        ret_mongo_err += f"! Exception {type(e)} occurred while deleting {submitter_id}) from database, message=[{e}] ! traceback={traceback.format_exc()}"
         delete_status = "exception"
         
     ret = {
@@ -343,7 +346,7 @@ async def delete_submitter(submitter_id: str= Query(default=None, description="u
         "info": ret_mongo,
         "stderr": ret_mongo_err
     }
-    logger.info(msg=f"[delete_submitter] returning ({ret})\n")
+    logger.info(msg=f"[delete_submitter] returning ({ret})")
     return ret
 
 @app.get("/submitters/{submitter_id}", summary="Return metadata associated with submitter")
@@ -351,7 +354,7 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
     try:
         object_id = _submitter_object_id(submitter_id)
         entry = mongo_submitters.find({"object_id": object_id},{"_id":0})
-        num_matches = _mongo_count("submitter", mongo_submitters, {"object_id": object_id},{"_id":0})
+        num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
         logger.info(msg=f"[submitter]found ({num_matches}) matches for object_id={object_id}")
         assert num_matches == 1
         ret_val = entry[0]
@@ -359,7 +362,7 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
         return ret_val
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")    
+                            detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")    
 
 from multiprocessing import Process
 from redis import Redis
@@ -380,19 +383,43 @@ def _file_path(object_id):
           
 @as_form
 class ProviderParameters(BaseModel):
-    submitter_id: EmailStr = Field(...,
-                                   title="email",
-                                   description="unique submitter id (email)")
     service_id: str =        Field(...,
                                    title="Provider service id",
                                    description="id of service used to upload this object")
+    submitter_id: EmailStr = Field(...,
+                                   title="email",
+                                   description="unique submitter id (email)")
+    data_type: Optional[str] = Field(None, title="Data type of this object",
+                                     description="the type of data; options are: dataset-geneExpression, results-pca, results-cellularFunction. Not all types are supported by all providers")
     description: Optional[str] =  Field(None, title="Description",
                                         description="detailed description of this data (optional)")
+    version: Optional[str] =  Field(None, title="Version of this object",
+                                        description="objects shouldn't ever be deleted unless data are redacted or there is a database consistency problem.")
     accession_id: Optional[str] =    Field(None, title="External accession ID",
                                         description="if sourced from a 3rd party, this is the accession ID on that db")
     apikey: Optional[str] =       Field(None, title="External apikey",
                                         description="if sourced from a 3rd party, this is the apikey used for retrieval")
+    aliases: Optional[str] =       Field(None, title="Optional list of aliases for this object")
+    checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
+                                                 description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
+    
 
+
+def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
+    try:
+        object_id = f"{prefix}_{submitter_id}_{uuid.uuid4()}"
+        assert requested_object_id != None
+        logger.info(msg=f"[_gen_object_id] top prefex={prefix}, submitter={submitter_id}, requested:{requested_object_id}")
+        entry = coll.find({"object_id": requested_object_id},
+                          {"_id": 0, "object_id": 1})
+        num_matches = _mongo_count(coll,{"object_id": requested_object_id})
+        logger.info(msg=f"[_gen_object_id]found ({num_matches}) matches for requested object_id={requested_object_id}")
+        assert num_matches == 0
+        return requested_object_id
+    except Exception as e:
+        logger.warn(msg=f"[_gen_object_id] ? Exception {type(e)} occurred when using {requested_object_id}, using {object_id} instead. message=[{e}] ! traceback={traceback.format_exc()}")
+        logger.warn(msg=f"[_gen_object_id] ")
+        return object_id
 
 def _set_agent_status(accession_id, service_object_id, num_files_requested, num_loaded_files):
     # status = finished if
@@ -421,7 +448,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         logger.info(msg=f"[_remote_submit_file] looking up {agent_object_id}")
         entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
         obj = entry[0]
-        assert _mongo_count("_remote_submit_file", m_objects, {"object_id":agent_object_id}, {"_id"}) == 1
+        assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
         host_url = _get_url(obj["parameters"]["service_id"])
         m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
@@ -461,13 +488,14 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
 
         if response.status_code == 200:        
             json_obj = response.json()
-            logger.info(msg=f"[_remote_submit_file] response={json.dumps(json_obj, indent=4)}")
+            #logger.info(msg=f"[_remote_submit_file] response={json.dumps(json_obj, indent=4)}")
             service_object_id = json_obj["object_id"]
             logger.info(msg=f"[_remote_submit_file] service_object_id={service_object_id}")
             # xxx map the returned service_object_id back onto the agent_object_id but updatin that object
             m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
                                      "service_object_id": service_object_id,
+                                     "agent_status": "finished"
                                  }})
             ''' xxx ??? figure out how to handle a zipfile now
             loaded_file_objects = obj.file_objects.append({file_type: service_object_id})
@@ -481,22 +509,26 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         else:
             detail_str = f'status_code={response.status_code}, response={response.text}'
             logger.error(msg=f"[_remote_submit_file] ! {detail_str}")
-            m_objects.update_one({"object_id": object_id},
+            m_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
                                          "agent_status": "failed",
                                          "detail": f'[_remote_submit_file]: {detail_str}'
                                      }})            
 
         # unlink directory after all files have been processed
-        if agent_file_dir is not None:
-            os.rmdir(os.path.split(agent_file_dir))
+        logger.info(msg=f"[_remote_submit_file] object {agent_object_id} successfully created, removing director {agent_file_dir}")
+        try: 
+            os.rmdir(agent_file_dir)
+        except Exception as e:
+            logger.error(msg=f'[_remote_submit_file] ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
 
     except Exception as e:
-        detail_str += f"! Exception {type(e)} occurred while posting files, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
+        detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
+        logger.error(msg=f"[_remote_submit_file] ! status=failed, {detail_str}")
         try:
-            detail_str += f'Exception {type(e)} occurred while submitting object to service, obj=({object_id}), service_object_id=({service_object_id}) message=[{e}] \n! traceback=\n{traceback.format_exc()}\n'
-            m_objects.update_one({"object_id": object_id},
+            detail_str = f'Exception {type(e)} occurred while submitting object to service, obj=({agent_object_id}), service_object_id=({service_object_id}) message=[{e}] ! traceback={traceback.format_exc()}'
+            m_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
                                          "service_object_id": service_object_id,
                                          "agent_status": "failed",
@@ -504,12 +536,13 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                      }})
         except:
             logger.error(msg=f'[_remote_submit_file] ! unable to update object to failed.')
-        logger.error(msg=f"[_remote_submit_file] ! status=failed, {detail_str}")
-
+        logger.error(msg=f'[_remote_submit_file] ! updated object {agent_object_id} to failed.')
+            
 
 
 @app.post("/objects/load", summary="load object metadata and data for analysis from an end user or a 3rd party server")
 async def post_object(parameters: ProviderParameters = Depends(ProviderParameters.as_form),
+                      requested_object_id: Optional[str] =  Query(None, title="Request an object id, not guaranteed. mainly for testing"),
                       optional_file_archive: UploadFile = File(None),
                       optional_file_expressionMatrix: UploadFile = File(None),
                       optional_file_samplePropertiesMatrix: UploadFile = File(None)
@@ -518,7 +551,9 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     warning: executing this repeatedly for the same service/object will create duplicates in the database
     example request_url: submitter_id=krobasky%40renci.org&data_type=dataset-geneExpression&version=1.0
     Service will be called repeatedly, once per file and once per accession_id, based on what is provided.
+    Must provide either an accession_id or one of the three optional files to avoid a 500 error
     '''
+    logger.info(msg=f"[post_object] top")
     try:
         # xxx add submitter  to submitters collection
         client_file_dict = {
@@ -529,26 +564,30 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         num_files_requested=0
         for key in client_file_dict:
             num_files_requested=num_files_requested+(client_file_dict[key] is not None)
-        agent_object_id = str(uuid.uuid4())
+        assert num_files_requested > 0 or parameters.accession_id != None
+        logger.info(msg=f"[post_object] getting id")
+        agent_object_id = _gen_object_id("agent", parameters.submitter_id, requested_object_id, mongo_objects)
+        
         timeout_seconds = g_redis_default_timeout # read this from config.json for the service xxx
         logger.info(msg=f"[post_object] submitter={parameters.submitter_id}, to service_id={parameters.service_id}, requesting {num_files_requested} files, timeout_seconds={timeout_seconds}")
         job_id = str(uuid.uuid4())
         # stream any file(s) onto the fuse-agent server, named on fuse-agent from the client file name
         # xxx replace this with a ProviderObject model instance
-        provider_object = {"object_id": agent_object_id,
-                           "created_time": datetime.utcnow(),
-                           "submitter_id": parameters.submitter_id,
-                           "parameters": parameters.dict(), # xxx?
-                           "service_object_id": None,
-                           "service_host_url": 1,
-                           "job_id": job_id,
-                           "agent_status": None,
-                           "loaded_file_objects": [],
-                           "num_files_requested": num_files_requested,
-                           "detail": None,
-                           }
+        provider_object = {
+            "object_id": agent_object_id,
+            "created_time": datetime.utcnow(),
+            "parameters": parameters.dict(), # xxx?
+            "job_id": job_id,
+            "agent_status": None,
+            "loaded_file_objects": [],
+            "num_files_requested": num_files_requested,
+            "detail": None,
+            "service_object_id": None
+        }
+                               
         # xxx use this to get ProviderModel instance json: mongo_objects.insert(provider_object.dict())
-        _mongo_insert("post_object", mongo_objects, provider_object)
+        logger.info(msg=f"[post_object] inserting provider_object={provider_object}")
+        _mongo_insert(mongo_objects, provider_object)
         logger.info(msg=f"[post_object] created provider object: object_id:{agent_object_id}, submitter_id:{parameters.submitter_id}, job_id:{job_id}")
 
         agent_file_paths=[]
@@ -589,7 +628,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         
         return {"object_id": agent_object_id}
     except Exception as e:
-        detail_str = f'Exception {type(e)} occurred while loading object to service=[{parameters.service_id}], \n message=[{e}] \n! traceback=\n{traceback.format_exc()}\n'
+        detail_str = f'Exception {type(e)} occurred while loading object to service=[{parameters.service_id}],  message=[{e}] ! traceback={traceback.format_exc()}'
         try:
             mongo_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
@@ -617,7 +656,7 @@ async def get_objects(submitter_id: str = Query(default=None, description="uniqu
         return ret
     except Exception as e:
         raise HTTPException(status_code=500,
-                            detail="! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail="! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
 
 # xxx is this unecessary? can we just get the url from the provider at time of submission, cache it, and ignore the drs?
@@ -653,7 +692,7 @@ async def get_url(object_id: str):
     try:
         logger.info(msg=f"[get_url] find local object={object_id}")
         entry = mongo_objects.find({"object_id": object_id},{"_id": 0, "service_object_id": 1, "service_host_url": 1, "agent_status": 1 })
-        assert _mongo_count("get_url", mongo_objects, {"object_id":object_id}, {"_id"}) == 1
+        assert _mongo_count(mongo_objects, {"object_id":object_id}) == 1
         obj = entry.next()
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
         assert obj["agent_status"] == "finished"
@@ -662,7 +701,7 @@ async def get_url(object_id: str):
         return obj_url
     except Exception as e:
         raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         
     '''
     # xxx this is all unecessary?:
@@ -679,14 +718,128 @@ async def get_url(object_id: str):
             host_name = f'https://drs_dict["server_host"]:drs_dict["server_port"]'
         logger.info(msg=f'[get_url] Retrieving {drs} at host={host_name}, object_id={drs_dict["object_id"]}')
         file_url = f"{host_name}/files/{object_id}"
-        logger.info(msg=f"[get_url] returning url={file_url}\n")
+        logger.info(msg=f"[get_url] returning url={file_url}")
         return file_url
 
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail="! Exception {type(e)} occurred while retrieving for ({drs}), server({url}) message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+                            detail="! Exception {type(e)} occurred while retrieving for ({drs}), server({url}) message=[{e}] ! traceback={traceback.format_exc()}")
     '''
 
+
+def _remote_delete_object(agent_object_id:str):
+    delete_status = "started"
+    ret_mongo=""
+    ret_mongo_err=""
+    try:
+        ####
+        # FIRST request delete on remote server
+
+        # because this may run out-of-band, I think we might need a new mongodb connection?
+        logger.info(msg=f"[_remote_delete_object] connecting to {mongo_client_str} anew")
+        my_mongo_client = pymongo.MongoClient(mongo_client_str)
+        my_mongo_db = my_mongo_client.test
+        m_objects=my_mongo_db.objects
+        
+        logger.info(msg=f"[_remote_delete_object] looking up {agent_object_id}")
+        entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
+        assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
+        obj = entry[0]
+        service_object_id = obj["service_object_id"] # set this early in case there's an exception
+        host_url = _get_url(obj["parameters"]["service_id"])
+        delete_url=f"{host_url}/delete/{service_object_id}"
+        logger.info(msg=f"[_remote_delete_object] delete remote object with {delete_url}")
+        response = requests.delete(delete_url)
+        #  ^^^^ everything to here works.
+        assert response.status_code == 200 or response.status_code == 404
+        
+        ####
+        # IF THAT WORKS delete object on agent:
+        if response.status_code == 404:
+            logger.warn(msg=f"[_remote_delete_object] Remote object {service_object_id} not found with {delete_url} when deleting {agent_object_id}")
+            # xxx may want to add this to an audit report for admin or something
+            
+        logger.warn(msg=f"[_remote_delete_object] Deleting agent agent_object_id: {agent_object_id}")
+        ret = m_objects.delete_one({"object_id": agent_object_id})
+        #<class 'pymongo.results.DeleteResult'>
+        delete_status = "deleted"
+        if ret.acknowledged != True:
+            delete_status = "failed"
+            ret_mongo += "ret.acknoledged not True."
+            info += f"Object not found on provider."
+            logger.error(msg=f"[_remote_delete_object] agent delete failed, ret.acknowledged ! = True")
+        if ret.deleted_count != 1:
+            # should never happen if index was created for this field
+            delete_status = "failed"
+            ret_mongo += f"Wrong number of records deleted ({ret.deleted_count})."
+            info += f"Wrong number of provider records deleted ({ret.deleted_count})."
+            logger.error(msg=f"[_remote_delete_object] delete failed, wrong number deleted, count[1]={ret.deleted_count}")
+
+        ret_mongo += f"Deleted agent objects, count=({ret.deleted_count}), Acknowledged=({ret.acknowledged})."
+    except Exception as e:
+        logger.error(msg=f"[_remote_delete_object] Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}]  ! traceback={traceback.format_exc()}")
+        ret_mongo_err += f"! Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}] ! traceback={traceback.format_exc()}"
+        info = f"Somthing went wrong with delete. {info}"
+        delete_status = "exception"
+        
+    # If data are cached on a mounted filesystem, unlink that too if it's there
+    logger.info(msg=f"[_remote_delete_object] Deleting agent {agent_object_id} from file system")
+    ret_os=""
+    ret_os_err=""
+    try:
+        # xxx this isn't working, remove file first?
+        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        local_path = os.path.join(local_path, f"{agent_object_id}-data")
+        logger.info(msg=f"[_remote_delete_object] removing tree ({local_path})")
+        shutil.rmtree(local_path,ignore_errors=False)
+    except Exception as e:
+        logger.warn(msg=f"[_remote_delete_object] Exception {type(e)} occurred while deleting agent {agent_object_id} from filesystem")
+        ret_os_err += f"? Exception {type(e)} occurred while deleting agent object from filesystem, message=[{e}] ! traceback={traceback.format_exc()}"
+
+    return {
+        "status": delete_status,
+        "info": f"{ret_mongo} {ret_os}",
+        "stderr": f"{ret_mongo_err} {ret_os_err}"
+    }
+
+    
+# xxx connect this to delete associated analyses if object is dataset?
+@app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.")
+async def delete(object_id: str):
+    '''
+    Delete cached data from the remote provider, identified by the provided object_id.
+    <br>**WARNING**: This will orphan associated analyses; only delete downloads if:
+    - the data are redacted.
+    - the system state needs to be reset, e.g., after testing.
+    - the sytem state needs to be corrected, e.g., after a bugfix.
+
+    <br>**Note**: If the object was changed on the data provider's server, the old copy should be versioned in order to keep an appropriate record of the input data for past dependent analyses.
+    <br>**Note**: Object will be deleted from disk regardless of whether or not it was found in the database. This can be useful for manual correction of erroneous system states.
+    <br>**Returns**: 
+    - status = 'deleted' if object is found in the database and 1 object successfully deleted.
+    - status = 'exception' if an exception is encountered while removing the object from the database or filesystem, regardless of whether or not the object was successfully deleted, see other returned fields for more information.
+    - status = 'failed' if 0 or greater than 1 object is not found in database.
+    '''
+    info=""
+    delete_status=""
+    stderr=""
+    try:
+        # may want to enqueue, but for now just call it directly
+        logger.info(msg=f"[delete] deleting {object_id}")
+        ret = _remote_delete_object(object_id)
+        logger.info(msg=f"[delete] returned ({ret})")
+        info=ret["info"]
+        delete_status=ret["status"]
+        stderr=ret["stderr"]
+        assert delete_status == "deleted"
+        return ret
+    except Exception as e:
+        detail_str = f'! Message=[{info}] Error while deleting ({object_id}), status=[{delete_status}] stderr=[{stderr}]'
+        logger.error(msg=f"[delete] Exception {type(e)} occurred while deleting agent {object_id} from filesystem. detail_str={detail_str}")
+        raise HTTPException(status_code=404,
+                            detail=detail_str)
+
+    
 # xxx is this necessary? maybe just return status instead?
 @app.get("/objects/{object_id}", summary="get metadata for the object")
 async def get_object(object_id: str = Query(default=None, description="unique identifier on agent to retrieve previously loaded object")):
@@ -695,38 +848,23 @@ async def get_object(object_id: str = Query(default=None, description="unique id
     Includes status and links to the input dataset, parameters, and dataset results if this object was created by a tool service
     '''
     try:
-        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0,
-                                                            "submitter_id": 1,
-                                                            "service_object_id": 1,
-                                                            "job_id": 1,
-                                                            "agent_status": 1,
-                                                            "detail": 1,
-                                                            "service_host_url": 1,
-                                                            "object_id": 1})
-
-        assert _mongo_count("get_object", mongo_objects, {"object_id":object_id}, {"_id"}) == 1        
+        logger.info(msg=f"[get_object] Finding metadata for object {object_id}")
+        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
+        assert _mongo_count(mongo_objects, {"object_id":object_id}) == 1        
         obj = entry[0]
-        if not "agent_status" in obj.keys():
-            if "status" in obj.keys():
-                obj["agent_status"] = obj["status"]
-            else:
-                obj["agent_status"] = "unknown"
-            
         logger.info(msg=f'[get_object] found local object, agent_status={obj["agent_status"]}')
-        
+        service_obj_metadata = None
         if obj["agent_status"] == "finished":
             response = requests.get(f'{obj["service_host_url"]}/objects/{obj["service_object_id"]}')
             service_obj_metadata = response.json()
-            service_obj_metadata["agent_status"] = obj["agent_status"]
-            return service_obj_metadata
-        else:
-            return {"agent_status": obj["agent_status"],
-                    "detail": obj["detail"],
-                    }
+            logger.info(msg=f'[get_object] metadata={service_obj_metadata}')
+
+        obj["provider"] = service_obj_metadata
+        return obj
 
     except Exception as e:
-        raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] \n! traceback=\n{traceback.format_exc()}\n")
+        raise HTTPException(status_code=404,
+                            detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
     
 
 @app.post("/analyze", summary="submit an analysis")

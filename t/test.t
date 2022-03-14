@@ -18,7 +18,7 @@ use warnings;
 
 use Getopt::Long qw(GetOptions);
 
-use Test::More tests => 9;
+use Test::More tests => 14;
 use Test::File::Contents;
 
 use lib './t';
@@ -72,4 +72,33 @@ files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),    
 $fn = "test-9.json";
 files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                       "Try to delete same submitter again");
 
+# provider tests
+
+# xxx add in for provider in providers:
+my $service_id="fuse-provider-upload";
+$fn = "provider-1.json";
+files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${OBJID}",
+		     "-F service_id=${service_id} " .
+		     "-F submitter_id=${SUBMITTER_ID} " .
+		     "-F data_type=dataset-geneExpression " .
+		     "-F version=1.0 " .
+		     "-F 'optional_file_samplePropertiesMatrix=@./t/input/phenotypes.csv;type=application/csv' " .
+		     "-H 'Content-Type: multipart/form-data' -H 'accept: application/json'"),
+	                                                                                                   "($fn) Submit csv file");
+sleep(1); # wait for job queue to catch up
+$fn = "provider-2.json";
+generalize_output($fn, cmd("GET", rawf($fn), "objects/{$OBJID}"), ["created_time", "updated_time", "job_id","provider","service_object_id"]);
+files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get info about csv DRS object");
+
+#$fn = "provider-3.json";
+#files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object");
+
+$fn = "provider-3.json";
+generalize_output($fn, cmd("DELETE", rawf($fn), "delete/{$OBJID}"), ["stderr"]);
+files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Delete the csv object");
+
+$fn = "provider-4.json";
+files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object (not found)");
+$fn = "provider-4.json";
+files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object (not found)");
 

@@ -1,0 +1,33 @@
+participant_id,study_time_collected,study_time_collected_unit,cohort,cohort_type,biosample_accession,exposure_material_reported,exposure_process_preferred
+SUB205420.1529,0,Days,healthy aldults,healthy aldults_Whole blood,BS1028510,YF-Vax,vaccination
+SUB205405.1529,7,Days,healthy aldults,healthy aldults_Whole blood,BS1028423,YF-Vax,vaccination
+SUB209323.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Bone Marrow,BS1043467,NA,no exposure
+SUB168244.787,2,Months,aP vaccinated individuals,aP vaccinated individuals_T cell,BS983563,NA,NA
+SUB209357.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Spleen,BS1043456,NA,no exposure
+SUB205411.1529,0,Days,healthy aldults,healthy aldults_Whole blood,BS1028560,YF-Vax,vaccination
+SUB209358.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Spleen,BS1043465,NA,no exposure
+SUB168246.787,2,Months,aP vaccinated individuals,aP vaccinated individuals_T cell,BS983569,NA,NA
+SUB205421.1529,84,Days,healthy aldults,healthy aldults_Whole blood,BS1028539,YF-Vax,vaccination
+SUB168239.787,2,Months,aP vaccinated individuals,aP vaccinated individuals_T cell,BS983572,NA,NA
+SUB205391.1529,3,Days,healthy aldults,healthy aldults_Whole blood,BS1028417,YF-Vax,vaccination
+SUB205409.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028496,YF-Vax,vaccination
+SUB192214.787,3,Months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months_T cell,BS983533,DTwP,vaccination
+SUB209323.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Lung lymph node,BS1043466,NA,no exposure
+SUB168246.787,2,Months,aP vaccinated individuals,aP vaccinated individuals_T cell,BS983567,NA,NA
+SUB205407.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028441,YF-Vax,vaccination
+SUB205415.1529,7,Days,healthy aldults,healthy aldults_Whole blood,BS1028463,YF-Vax,vaccination
+SUB205411.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028561,YF-Vax,vaccination
+SUB209357.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Bone Marrow,BS1043455,NA,no exposure
+SUB205417.1529,3,Days,healthy aldults,healthy aldults_Whole blood,BS1028472,YF-Vax,vaccination
+SUB209357.1630,6,Hours,All subjects for human NK cell diversity study,All subjects for human NK cell diversity study_Lung,BS1043457,NA,no exposure
+SUB168247.787,2,Months,aP vaccinated and aP boosted individuals sampled at 0.5-3 months and/or at 4-8 months,aP vaccinated and aP boosted individuals sampled at 0.5-3 months and/or at 4-8 months_T cell,BS983559,NA,NA
+SUB192210.787,2,Months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months_T cell,BS983516,DTwP,vaccination
+SUB192211.787,3,Months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months,wP vaccinated and aP boosted individuals sampled at 1-3 months and/or at 5-44 months_T cell,BS983519,DTwP,vaccination
+SUB205421.1529,3,Days,healthy aldults,healthy aldults_Whole blood,BS1028537,YF-Vax,vaccination
+SUB205404.1529,7,Days,healthy aldults,healthy aldults_Whole blood,BS1028453,YF-Vax,vaccination
+SUB205399.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028406,YF-Vax,vaccination
+SUB205393.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028401,YF-Vax,vaccination
+SUB205396.1529,84,Days,healthy aldults,healthy aldults_Whole blood,BS1028439,YF-Vax,vaccination
+SUB205386.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028556,YF-Vax,vaccination
+SUB205389.1529,7,Days,healthy aldults,healthy aldults_Whole blood,BS1028543,YF-Vax,vaccination
+SUB205410.1529,14,Days,healthy aldults,healthy aldults_Whole blood,BS1028516,YF-Vax,vaccination
