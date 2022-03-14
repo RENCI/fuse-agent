@@ -718,7 +718,7 @@ async def get_url(object_id: str):
         service_object_id = obj["service_object_id"]
         obj_url = f'{host_url}/files/{service_object_id}'
         logger.info(msg=f"[get_url] built url = ={obj_url}")
-        return obj_url
+        return {"object_id": object_id, "url": obj_url}
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")

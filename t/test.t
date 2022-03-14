@@ -18,7 +18,7 @@ use warnings;
 
 use Getopt::Long qw(GetOptions);
 
-use Test::More tests => 14;
+use Test::More tests => 15;
 use Test::File::Contents;
 
 use lib './t';
@@ -92,8 +92,11 @@ $fn = "provider-2.json";
 generalize_output($fn, cmd("GET", rawf($fn), "objects/{$OBJID}"), ["agent","provider"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get info about csv DRS object");
 
-#$fn = "provider-3.json";
-#files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object");
+# currently, there is no way to parse the object out of the url so this is just a smoke-test
+$fn = "provider-2b.json";
+generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$OBJID}"), ["url"]);
+files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get URL for object's file");
+
 
 $fn = "provider-3.json";
 generalize_output($fn, cmd("DELETE", rawf($fn), "delete/{$OBJID}"), ["stderr"]);
