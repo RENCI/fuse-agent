@@ -97,6 +97,8 @@ $fn = "provider-2b.json";
 generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$OBJID}"), ["url"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get URL for object's file");
 
+$fn = "provider-2c.json";
+files_eq(f($fn), cmd("GET",    $fn, "objects/search/${SUBMITTER_ID}"),                                     "Get list of objects created by the submitter");
 
 $fn = "provider-3.json";
 generalize_output($fn, cmd("DELETE", rawf($fn), "delete/{$OBJID}"), ["stderr"]);

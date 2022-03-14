@@ -668,7 +668,7 @@ async def get_objects(submitter_id: str = Query(default=None, description="uniqu
     use /objects/{object_id} to get object status and other metadata
     '''
     try:
-        ret = list(map(lambda a: a, mongo_objects.find({"submitter_id": submitter_id}, {"_id": 0, "object_id": 1})))
+        ret = list(map(lambda a: a, mongo_objects.find({"parameters.submitter_id": submitter_id}, {"_id": 0, "object_id": 1})))
         logger.info(msg=f"[get_objects] ret:{ret}")
         return ret
     except Exception as e:
