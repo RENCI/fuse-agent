@@ -18,7 +18,7 @@ use warnings;
 
 use Getopt::Long qw(GetOptions);
 
-use Test::More tests => 15;
+use Test::More tests => 16;
 use Test::File::Contents;
 
 use lib './t';
@@ -74,7 +74,6 @@ files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),    
 
 # provider tests
 
-# xxx add in for provider in providers:
 my $service_id="fuse-provider-upload";
 $fn = "provider-1.json";
 files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${OBJID}",
