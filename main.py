@@ -265,9 +265,9 @@ def api_add_submitter(submitter_id: str):
     object_id = _submitter_object_id(submitter_id)
     num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
 
-    submitter_status = "new"
+    submitter_status = "unknown"
     if num_matches == 1:
-        submitter_status = "found"
+        submitter_status = "existed"
     else :
         assert num_matches == 0
         submitter_object = Submitter(
@@ -279,6 +279,7 @@ def api_add_submitter(submitter_id: str):
         logger.info(msg=f"[api_add_submitter] submitter_object={submitter_object}")
         _mongo_insert(mongo_submitters, submitter_object.dict())
         logger.info(msg="[api_add_submitter] submitter added.")
+        submitter_status = "created"
 
     ret_val = {
         "submitter_id": submitter_id,
