@@ -509,7 +509,6 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                  {"$set": {
                                      "service_object_id": service_object_id, # xxx remove this everywhere
                                      "loaded_file_objects": loaded_file_objects,
-                                     "agent_status": "finished",
                                  }})
             ''' xxx ??? figure out how to handle a zipfile now
             loaded_file_objects = obj.file_objects.append({file_type: service_object_id})
@@ -541,6 +540,11 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             if len(loaded_file_objects) == obj["num_files_requested"]:
                 logger.info(msg=f"[_remote_submit_file] ({file_type}) Removing directory {agent_file_dir}")
                 os.rmdir(agent_file_dir)
+                m_objects.update_one({"object_id": agent_object_id},
+                                     {"$set": {
+                                         "agent_status": "finished"
+                                     }})
+                logger.info(msg=f"[_remote_submit_file] ({file_type}) ({agent_object_id}) agent_status = finished")
         except Exception as e:
             logger.error(msg=f'[_remote_submit_file] ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
@@ -893,14 +897,18 @@ async def get_object(object_id: str = Query(default=None, description="unique id
         obj = entry[0]
         logger.info(msg=f'[get_object] found local object, agent_status={obj["agent_status"]}')
         service_obj_metadata = None
-        if obj["agent_status"] == "finished":
-            response = requests.get(f'{obj["service_host_url"]}/objects/{obj["service_object_id"]}')
-            service_obj_metadata = response.json()
-            logger.info(msg=f'[get_object] metadata={service_obj_metadata}')
-
         new_obj={}
         new_obj["agent"]= obj
-        new_obj["provider"] = service_obj_metadata
+        new_obj["provider"] = {}
+        if obj["agent_status"] == "finished":
+            for file_type in obj["loaded_file_objects"]:
+                service_object_id = obj["loaded_file_objects"][file_type]
+                logger.info(msg=f'[get_object] ({file_type}) REQUEST: {service_object_id}')
+                response = requests.get(f'{obj["service_host_url"]}/objects/{service_object_id}')
+                service_obj_metadata = response.json()
+                logger.info(msg=f'[get_object] ({file_type}) METADATA={service_obj_metadata}')
+                new_obj["provider"][file_type] = service_obj_metadata
+
         return new_obj
 
     except Exception as e:
