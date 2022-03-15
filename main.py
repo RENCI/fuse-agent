@@ -102,12 +102,22 @@ class Submitter(BaseModel):
     created_time: datetime = None
     status: SubmitterStatus = SubmitterStatus.requested
     
-app = FastAPI()
+tags_metadata = [
+    {"name": "Data Provider Service", "description": "Call out to 3rd party data provider services"},
+    {"name": "Tool Service", "description": "Call out to 3rd party tool services (may query a data provider along the way)"},
+    {"name": "Submitter", "description": "Manage users"},
+    {"name": "Service", "description": "Tools and provider methods"},
+    {"name": "Get", "description": "Query only: All the methods you can use with a 'get' http call"},
+    {"name": "Post", "description": "Updata persistent data: All the methods you can use with a 'post' http call"},
+    {"name": "Delete", "description": "WARNING: Only use these calls for redacting data, correcting an inconsistent database state, or removing test data."}
+]
+
+app = FastAPI(openapi_url="/api/v1/openapi.json")
 
 origins = [
-    f"http://{os.getenv('HOSTNAME')}:{os.getenv('HOSTPORT')}",
-    f"http://{os.getenv('HOSTNAME')}",
-    "http://localhost:{os.getenv('HOSTPORT')}",
+    f"http://{os.getenv('HOST_NAME')}:{os.getenv('HOST_PORT')}",
+    f"http://{os.getenv('HOST_NAME')}",
+    "http://localhost:{os.getenv('HOST_PORT')}",
     "http://localhost",
     "*",
 ]
@@ -180,11 +190,11 @@ def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
 
 # xxx get with David to find out what else this should return in the json
-@app.get("/services/providers", summary="Returns a list of the configured data providers")
+@app.get("/services/providers", summary="Returns a list of the configured data providers", tags=["Get","Service","Data Provider Service"])
 async def providers():
     return _get_services("fuse-provider-")
 
-@app.get("/services/tools", summary="Returns a list of the configured data tools")
+@app.get("/services/tools", summary="Returns a list of the configured data tools", tags=["Get","Service","Tool Service"])
 async def tools():
     return _get_services("fuse-tool-")
 
@@ -218,7 +228,7 @@ def _resolveRefs(doc, models):
                 
 
 # xxx add this to systems tests after all subsystems are integrated
-@app.get("/services/schema/{service_id}", summary="returns the schema for the submit parameters required by the given service")
+@app.get("/services/schema/{service_id}", summary="returns the schema for the submit parameters required by the given service", tags=["Get","Service","Data Provider Service","Tool Service"])
 async def get_submit_parameters(service_id: str = Query(default="fuse-provider-upload", describe="loop through /providers or /tools to retrieve the submit parameters for each, providing the dashboard with everything it needs to render forms and solicit all the necessary information from the end user in order to load in datasets and/or run analyses")):
     try: 
         response = requests.get(f"{_get_url(service_id)}/openapi.json")
@@ -237,7 +247,7 @@ async def get_submit_parameters(service_id: str = Query(default="fuse-provider-u
         raise HTTPException(status_code=500,
                             detail=f"! Exception {type(e)} occurred while retrieving input schema for service submit, message=[{e}] ! traceback={traceback.format_exc()}")
 
-@app.get("/services", summary="Returns a list of all configured services")
+@app.get("/services", summary="Returns a list of all configured services", tags=["Get","Service","Data Provider Service","Tool Service"])
 async def all_services():
     '''
     once you have the list of services, you can call each one separately to get the descriptoin of parameters to give to end-users;
@@ -254,25 +264,31 @@ def _submitter_object_id(submitter_id):
 def api_add_submitter(submitter_id: str):
     object_id = _submitter_object_id(submitter_id)
     num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
-    if num_matches != 0:
-        raise Exception(f"Submitter already added as: {object_id}, entries found = {num_matches}")
-        
-    submitter_object = Submitter(
-        object_id = object_id,
-        submitter_id = submitter_id,
-        created_time = datetime.utcnow(),
-        status = SubmitterStatus.approved)
-    
-    logger.info(msg=f"[api_add_submitter] submitter_object={submitter_object}")
-    _mongo_insert(mongo_submitters, submitter_object.dict())
-    logger.info(msg="[api_add_submitter] submitter added.")
 
-    ret_val = {"submitter_id": submitter_id}
+    submitter_status = "new"
+    if num_matches == 1:
+        submitter_status = "found"
+    else :
+        assert num_matches == 0
+        submitter_object = Submitter(
+            object_id = object_id,
+            submitter_id = submitter_id,
+            created_time = datetime.utcnow(),
+            status = SubmitterStatus.approved)
+
+        logger.info(msg=f"[api_add_submitter] submitter_object={submitter_object}")
+        _mongo_insert(mongo_submitters, submitter_object.dict())
+        logger.info(msg="[api_add_submitter] submitter added.")
+
+    ret_val = {
+        "submitter_id": submitter_id,
+        "submitter_status": submitter_status
+    }
     logger.info(msg=f"[api_add_submitter] returning: {ret_val}")
     return ret_val
     
     
-@app.post("/submitters/add", summary="Create a record for a new submitter")
+@app.post("/submitters/add", summary="Create a record for a new submitter", tags=["Post","Submitter"])
 async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     Add a new submitter
@@ -303,7 +319,7 @@ def api_get_submitters(within_minutes:int = None):
         logger.info(msg=f"[api_get_submitters] ret:{ret}")
         return ret
 
-@app.get("/submitters/search", summary="Return a list of known submitters")
+@app.get("/submitters/search", summary="Return a list of known submitters", tags=["Get","Submitter"])
 async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
     '''
     return list of submitters
@@ -314,7 +330,7 @@ async def get_submitters(within_minutes: Optional[int] = Query(default=None, des
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while searching submitters, message=[{e}] ! traceback={traceback.format_exc()}")
     
-@app.delete("/submitters/delete/{submitter_id}", summary="Remove a submitter record")
+@app.delete("/submitters/delete/{submitter_id}", summary="Remove a submitter record", tags=["Delete","Submitter"])
 async def delete_submitter(submitter_id: str= Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     deletes submitter and their datasets, analyses
@@ -367,7 +383,7 @@ def api_get_submitter(submitter_id):
     logger.info(msg=f"[api_get_submitter] returning: {ret_val}")
     return ret_val
     
-@app.get("/submitters/{submitter_id}", summary="Return metadata associated with submitter")
+@app.get("/submitters/{submitter_id}", summary="Return metadata associated with submitter", tags=["Get","Submitter"])
 async def get_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     try:
         return api_get_submitter(submitter_id)
@@ -392,6 +408,19 @@ def _file_path(object_id):
     local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     return os.path.join(local_path, f"{object_id}-data")
           
+@as_form
+class ToolParameters(BaseModel):
+    service_id: str =        Field(...,
+                                   title="Provider service id",
+                                   description="id of service used to upload this object")
+    submitter_id: EmailStr = Field(...,
+                                   title="email",
+                                   description="unique submitter id (email)")
+    number_of_components: int = 3
+    description: Optional[str] =  Field(None, title="Description",
+                                        description="detailed description of the requested analysis being performed (optional)")
+    
+    
 @as_form
 class ProviderParameters(BaseModel):
     service_id: str =        Field(...,
@@ -446,6 +475,7 @@ def _set_agent_status(accession_id, service_object_id, num_files_requested, num_
 # @job('low', connection=g_redis_connection, timeout=g_redis_default_timeout)
 async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_path:str):
     try:
+        ##### common with _remote_submit_analysis, break it out
         # because this runs out-of-band, or maybe the async is doing it, I think we might need a new mongodb connection?
         logger.info(msg=f"[_remote_submit_file] ({file_type}) connecting to {mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}, agent_file_path:{agent_file_path} ")
         my_mongo_client = pymongo.MongoClient(mongo_client_str)
@@ -469,6 +499,8 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         logger.info(msg=f"[_remote_submit_file] ({file_type}) host_url={host_url}")
         submit_url=f"{host_url}/submit"
         logger.info(msg=f"[_remote_submit_file] ({file_type}) posting to url={submit_url}")
+        # common code ^^^
+        #####
         (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
         logger.info(msg=f"[_remote_submit_file] ({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
 
@@ -566,7 +598,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             
 
 
-@app.post("/objects/load", summary="load object metadata and data for analysis from an end user or a 3rd party server")
+@app.post("/objects/load", summary="load object metadata and data for analysis from an end user or a 3rd party server", tags=["Post","Service","Data Provider Service","Tool Service"])
 async def post_object(parameters: ProviderParameters = Depends(ProviderParameters.as_form),
                       requested_object_id: Optional[str] =  Query(None, title="Request an object id, not guaranteed. mainly for testing"),
                       optional_file_archive: UploadFile = File(None),
@@ -586,13 +618,6 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     '''
     logger.info(msg=f"[post_object] top")
     try:
-        logger.info("[post_object] adding submitter to submitters collection, as needed")
-        try:
-            submitter_object_id = api_get_submitter(parameters.submitter_id)
-        except Exception as e:
-            logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
-            api_add_submitter(parameters.submitter_id)
-        
         client_file_dict = {
             "filetype-dataset-archive": optional_file_archive,
             "filetype-dataset-expression": optional_file_expressionMatrix,
@@ -602,9 +627,18 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         for file_type in client_file_dict.keys():
             num_files_requested=num_files_requested+(client_file_dict[file_type] is not None)
         assert num_files_requested > 0 or parameters.accession_id != None
+
+        #####
+        # xxx This code is common with /analyze, break it out:
+        logger.info("[post_object] adding submitter to submitters collection, as needed")
+        try:
+            submitter_object_id = api_get_submitter(parameters.submitter_id)
+        except Exception as e:
+            logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
+            submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
+        # Insert a new agent object
         logger.info(msg=f"[post_object] getting id")
         agent_object_id = _gen_object_id("agent", parameters.submitter_id, requested_object_id, mongo_objects)
-        
         timeout_seconds = g_redis_default_timeout # read this from config.json for the service xxx
         logger.info(msg=f"[post_object] submitter={parameters.submitter_id}, to service_id={parameters.service_id}, requesting {num_files_requested} files, timeout_seconds={timeout_seconds}")
         # stream any file(s) onto the fuse-agent server, named on fuse-agent from the client file name
@@ -619,12 +653,12 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             "detail": None,
             "service_object_id": None
         }
-                               
         # xxx use this to get ProviderModel instance json: mongo_objects.insert(provider_object.dict())
         logger.info(msg=f"[post_object] inserting agent-side provider_object={provider_object}")
         _mongo_insert(mongo_objects, provider_object)
         logger.info(msg=f"[post_object] created provider object: object_id:{agent_object_id}, submitter_id:{parameters.submitter_id}")
-
+        # xxx
+        #####
 
         # unlink files and directory (which may be empty) when you get into the job
         agent_path = _file_path(agent_object_id)
@@ -633,7 +667,6 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
 
         if parameters.accession_id is not None:
             logger.info(msg=f"[post_object] calling service with accession id = {parameters.accession_id, parameters.apikey}")
-            # xxx finish here
             
         for file_type in client_file_dict.keys():
             client_file_obj = client_file_dict[file_type]
@@ -644,11 +677,14 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 with open(agent_file_path, 'wb') as out_file:
                     contents = client_file_obj.file.read()
                     out_file.write(contents)
-                job_id = str(uuid.uuid4())
-                # xxx maybe add to loaded_file_objects a status code and job_id?
                 import time
                 logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions")
                 time.sleep(3)
+                
+                ##### enqueue the job
+                # xxx This code is common with /analyze, break it out:                ####
+                job_id = str(uuid.uuid4())
+                # xxx maybe add to loaded_file_objects a status code and job_id?
                 logger.info(msg=f"[post_object] QUEUE: agent_object_id:{agent_object_id}, file_type:{file_type}, agent_file_path:{agent_file_path},job_id=:{job_id}") # ok so far
                 g_queue.enqueue(_remote_submit_file,
                                 args=(agent_object_id, file_type, agent_file_path),
@@ -663,8 +699,12 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 p_worker = Process(target=_initWorker)
                 p_worker.start()
                 # xxx should this be p_worker.work()?
+                #####
         
-        return {"object_id": agent_object_id}
+        return {
+            "object_id": agent_object_id,
+            "submitter_status": submitter_status
+        }
     except Exception as e:
         detail_str = f'Exception {type(e)} occurred while loading object to service=[{parameters.service_id}],  message=[{e}] ! traceback={traceback.format_exc()}'
         try:
@@ -682,7 +722,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     
 
     
-@app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter")
+@app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter", tags=["Get","Submitter"])
 async def get_objects(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     '''
     returns {'object_id': <object_id>},
@@ -723,7 +763,7 @@ def _parse_drs(drs_uri):
 '''
 
 from starlette.responses import StreamingResponse
-@app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
+@app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that", tags=["Get","Service","Data Provider Service","Tool Service"])
 async def get_url(object_id: str, file_type: str):
     '''
     filetype is one of "filetype-dataset-archive", "filetype-dataset-expression", or "filetype-dataset-properties" or
@@ -753,7 +793,7 @@ async def get_url(object_id: str, file_type: str):
         #drs:///{g_host_name}:{g_host_port}/{g_network}/{g_container_name}:{g_container_port}/{object_id}
         # xxx get the object_id DRS from the database
         drs_dict = _parse_drs(drs)
-        if drs_dict["server_host"] == "localhost" or drs_dict["server_host"] == "0.0.0.0" or drs_dict["server_host"] == os.getenv('HOSTNAME'):
+        if drs_dict["server_host"] == "localhost" or drs_dict["server_host"] == "0.0.0.0" or drs_dict["server_host"] == os.getenv('HOST_NAME'):
             # running locally, reference by container name
             assert os.getenv('CONTAINER_NETWORK')  == drs_dict["container_network"]
             host_name = f'http://drs_dict["container_name"]:drs_dict["container_port"]'
@@ -847,7 +887,7 @@ def _remote_delete_object(agent_object_id:str):
 
     
 # xxx connect this to delete associated analyses if object is dataset?
-@app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.")
+@app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.", tags=["Delete","Service","Data Provider Service","Tool Service"])
 async def delete(object_id: str):
     '''
     Delete cached data from the remote provider, identified by the provided object_id.
@@ -884,7 +924,7 @@ async def delete(object_id: str):
 
     
 # xxx is this necessary? maybe just return status instead?
-@app.get("/objects/{object_id}", summary="get metadata for the object")
+@app.get("/objects/{object_id}", summary="get metadata for the object", tags=["Get","Service","Data Provider Service","Tool Service"])
 async def get_object(object_id: str = Query(default=None, description="unique identifier on agent to retrieve previously loaded object")):
     '''
     gets object's status and remote metadata
@@ -916,14 +956,144 @@ async def get_object(object_id: str = Query(default=None, description="unique id
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
     
+async def _remote_analyze_object():
+    # because this runs out-of-band, or maybe the async is doing it, I think we might need a new mongodb connection?
+    function_name = "[_remote_analyze_object]"
+    try:
+        ##### FIRST get the provider file into a local directory
+        ##### THEN post the analysis, using that file - is there a way to authorize and connect a pipe so the file from the provider can be streamed straight to the tool?
+        # xxx
+        ##### common with _remote_submit_file, break it out
+        logger.info(msg=f"{function_name} ({file_type}) connecting to {mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}, agent_file_path:{agent_file_path} ")
+        my_mongo_client = pymongo.MongoClient(mongo_client_str)
+        my_mongo_db = my_mongo_client.test
+        m_objects=my_mongo_db.objects
+        
+        detail_str = ""
+        timeout_seconds = g_redis_default_timeout # xxx read this from config.json, what's reasonable here?
+        service_object_id = None # set this early in case there's an exception
+        logger.info(msg=f"{function_name} ({file_type}) looking up {agent_object_id}")
+        entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
+        assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
+        obj = entry[0]
+        host_url = _get_url(obj["parameters"]["service_id"])
+        m_objects.update_one({"object_id": agent_object_id},
+                                 {"$set": {
+                                     "service_host_url": host_url,
+                                     "agent_status": "started"
+                                 }})
+        logger.info(msg=f"{function_name} ({file_type}) host_url={host_url}")
+        submit_url=f"{host_url}/submit"
+        logger.info(msg=f"{function_name} ({file_type}) posting to url={submit_url}")
+        # stopped here xxx
+        ###### 
+        (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
+        logger.info(msg=f"[_remote_submit_file] ({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
 
-@app.post("/analyze", summary="submit an analysis")
-async def analyze():
+        # xxx use this again for submitting an accession_id/apikey
+        file_data = {'client_file': open(agent_file_path, 'rb')}
+        headers = {
+            'accept': 'application/json',
+            'Content-Type': 'multipart/form-data',
+        }
+        # "data_type": file_type, # xxx 
+        params = {
+            "submitter_id": obj["parameters"]["submitter_id"],
+            "data_type": "dataset-geneExpression", # xxx fix this!!
+            "version": "1.0"
+        }
+        logger.info(msg=f"params={json.dumps(params)}")
+        files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
+        response = requests.post(submit_url, params=params, files=files)
+
+        #response = requests.post('http://localhost:8083/submit?submitter_id=krobasky%40gmail.com&data_type=dataset-geneExpression&version=1.0', headers=headers, files=files)
+        #response = requests.post(submit_url,
+        #                        data = request_obj,
+        #                       timeout=timeout_seconds,
+        #                      files=file_data)
+        
+        logger.info(msg=f"[_remote_submit_file] ({file_type}) provider request complete for this file, removing file {agent_file_path}")
+        os.unlink(agent_file_path)
+
+        if response.status_code == 200:        
+            json_obj = response.json()
+            #logger.info(msg=f"[_remote_submit_file] ({file_type}) response={json.dumps(json_obj, indent=4)}")
+            service_object_id = json_obj["object_id"]
+            # xxx map the returned service_object_id back onto the agent_object_id but updatin that object
+            loaded_file_objects = obj["loaded_file_objects"]
+            loaded_file_objects[file_type] = service_object_id
+            logger.info(msg=f"[_remote_submit_file] ({file_type}) set file_type={file_type} = {service_object_id}; loaded_file_objects={loaded_file_objects}")
+            m_objects.update_one({"object_id": agent_object_id},
+                                 {"$set": {
+                                     "service_object_id": service_object_id, # xxx remove this everywhere
+                                     "loaded_file_objects": loaded_file_objects,
+                                 }})
+            ''' xxx ??? figure out how to handle a zipfile now
+            loaded_file_objects = obj.file_objects.append({file_type: service_object_id})
+            m_objects.update_one({"object_id": agent_object_id},
+                                     {"$set": {
+                                         "loaded_file_objects": loaded_file_objects,
+                                         "agent_status": _set_agent_status(obj["parameters"]["accession_id"], obj["parameters"]["service_object_id"],
+                                                                           obj["parameters"]["num_files_requested"],len(loaded_file_objects))
+                                      }})
+            '''
+        else:
+            detail_str = f'status_code={response.status_code}, response={response.text}'
+            logger.error(msg=f"[_remote_submit_file] ({file_type}) ! {detail_str}")
+            m_objects.update_one({"object_id": agent_object_id},
+                                     {"$set": {
+                                         "agent_status": "failed",
+                                         "detail": f'[_remote_submit_file]: {detail_str}'
+                                     }})            
+
+        # unlink directory after all files have been processed
+        logger.info(msg=f"[_remote_submit_file] ({file_type}) object {agent_object_id} successfully created.")
+        try:
+            # check if another thread made an update:
+            entry = m_objects.find({"object_id":agent_object_id},{"_id":0,"loaded_file_objects":1, "num_files_requested":1})
+            assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
+            obj = entry[0]
+            logger.info(msg=f'[_remote_submit_file] ({file_type}) obj={obj}')
+            logger.info(msg=f'[_remote_submit_file] ({file_type}) Loaded objects={len(obj["loaded_file_objects"])}, num requested={obj["num_files_requested"]}')
+            if len(loaded_file_objects) == obj["num_files_requested"]:
+                logger.info(msg=f"[_remote_submit_file] ({file_type}) Removing directory {agent_file_dir}")
+                os.rmdir(agent_file_dir)
+                m_objects.update_one({"object_id": agent_object_id},
+                                     {"$set": {
+                                         "agent_status": "finished"
+                                     }})
+                logger.info(msg=f"[_remote_submit_file] ({file_type}) ({agent_object_id}) agent_status = finished")
+        except Exception as e:
+            logger.error(msg=f'[_remote_submit_file] ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
+
+
+    except Exception as e:
+        detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
+        logger.error(msg=f"[_remote_submit_file] ({file_type}) ! status=failed, {detail_str}")
+        try:
+            detail_str = f'Exception {type(e)} occurred while submitting object to service, obj=({agent_object_id}), service_object_id=({service_object_id}) message=[{e}] ! traceback={traceback.format_exc()}'
+            m_objects.update_one({"object_id": agent_object_id},
+                                     {"$set": {
+                                         "service_object_id": service_object_id,
+                                         "agent_status": "failed",
+                                         "detail": f'[_remote_submit_file]: {detail_str}'
+                                     }})
+        except:
+            logger.error(msg=f'[_remote_submit_file] ({file_type}) ! unable to update object to failed.')
+        logger.error(msg=f'[_remote_submit_file] ({file_type}) ! updated object {agent_object_id} to failed.')
+
+    
+    return
+
+@app.post("/analyze", summary="submit an analysis", tags=["Post","Service","Tool Service"])
+async def analyze(parameters: ToolParameters = Depends(ToolParameters.as_form),
+                  requested_results_object_id: Optional[str] =  Query(None, title="Request an object id for the results, not guaranteed. mainly for testing"),
+                  ):
     '''
     params: 
-     - provider url 
-     - provider object_id 
-     - tool url
+     - submitter_id
+     - service_id
+     - dataset_object_id 
      - tool parameter values
     returns results_id
 from slack:
@@ -935,6 +1105,65 @@ return the object_id
 3. When the dashboard asks for the object, the agent returns the meta data
 4. If the meta data shows status = finished, the dashboard uses the link in the meta data to retrieve the results. (edited) 
     '''
+    try: 
+        try:
+            submitter_object_id = api_get_submitter(parameters.submitter_id)
+        except Exception as e:
+            logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
+            submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
 
+        entry = mongo_objects.find({"object_id": parameters.dataset_object_id}, {"_id":0})
+        assert  _mongo_count(mongo_objects, {"object_id": parameters.object_id}) == 1
+        obj = entry[0]
+        # create a results object with new id = agent_object_id
+
+        #### Insert a new agent object
+        # xxx This code is common with /load, break it out:
+        logger.info(msg=f"[analyze] getting id")
+        agent_object_id = _gen_object_id("agent", parameters.submitter_id, requested_results_object_id, mongo_objects)
+        timeout_seconds = g_redis_default_timeout # read this from config.json for the service xxx
+        # xxx replace this with a ResultsObject model instance; 
+        results_object = {
+            "object_id": agent_object_id,
+            "created_time": datetime.utcnow(),
+            "parameters": parameters.dict(), # xxx?
+            "agent_status": None,
+            "detail": None,
+            "service_object_id": None
+        }
+        logger.info(msg=f"[analyze] inserting agent-side results_object={results_object}")
+        _mongo_insert(mongo_objects, results_object)
+        logger.info(msg=f"[analyze] created results object: object_id:{agent_object_id}, submitter_id:{parameters.submitter_id}")
+        ##### enqueue the job
+        # xxx This code is common with /load, break it out:                
+        job_id = str(uuid.uuid4())
+        logger.info(msg=f"[analyze] submitter={parameters.submitter_id}, to service_id={parameters.service_id}, timeout_seconds={timeout_seconds}, job_id={job_id}")
+        g_queue.enqueue(_remote_analyze_object,
+                        args=(agent_object_id, parameters),
+                        timeout=timeout_seconds,
+                        job_id=job_id,
+                        result_ttl=-1)
+        mongo_objects.update_one({"object_id": agent_object_id},
+                                 {"$set": {
+                                     "agent_status": "queued"
+                                 }})
+        # xxx is this the right place for this?
+        p_worker = Process(target=_initWorker)
+        p_worker.start()
+        # xxx should this be p_worker.work()?
+        #####
+        
+        return {
+            "object_id": agent_object_id,
+            "submitter_status": submitter_status
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=404,
+                            detail="[analyze] ! Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
+        
+
+    
+    
 if __name__=='__main__':
         uvicorn.run("main:app", host='0.0.0.0', port=int(os.getenv("HOST_PORT")), reload=True )

@@ -14,8 +14,8 @@ services:
     networks:
       - agent_network
     depends_on:
-        - agent-redis
-        - agent-tx-persistence
+      - agent-redis
+      - agent-tx-persistence
 
   agent-tx-persistence:
     container_name: agent-tx-persistence
