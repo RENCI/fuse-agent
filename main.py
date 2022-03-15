@@ -723,12 +723,13 @@ def _parse_drs(drs_uri):
 '''
 
 from starlette.responses import StreamingResponse
-@app.get("/objects/url/{object_id}/{file-type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
-async def get_url(object_id: str):
+@app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that")
+async def get_url(object_id: str, file_type: str):
     '''
-    xxx filetype is one of "filetype-dataset-archive", "filetype-dataset-expression", or "filetype-dataset-properties" or
+    filetype is one of "filetype-dataset-archive", "filetype-dataset-expression", or "filetype-dataset-properties" or
     '''
     try:
+        # xxx make the parameter a FileType enum instead of a string
         logger.info(msg=f"[get_url] find local object={object_id}")
         entry = mongo_objects.find({"object_id": object_id},{"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id":object_id}) == 1
