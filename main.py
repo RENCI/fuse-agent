@@ -91,11 +91,11 @@ class Service(BaseModel):
     URL: HttpUrl = None
 
 class SubmitterActionStatus(str, Enum):
+    unknown='unknown' 
     created='created' 
     existed='existed' 
     
 class SubmitterStatus(str, Enum):
-    unknown='unknown'
     requested='requested'
     approved='approved'
     disabled='disabled'
@@ -270,7 +270,7 @@ def api_add_submitter(submitter_id: str):
     object_id = _submitter_object_id(submitter_id)
     num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
 
-    submitter_action_status = None
+    submitter_action_status = SubmitterActionStatus.unknown
     if num_matches == 1:
         submitter_action_status = SubmitterActionStatus.existed
     else :
@@ -623,7 +623,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
 
     '''
     logger.info(msg=f"[post_object] top")
-    submitter_action_status = None
+    submitter_action_status = SubmitterActionStatus.unknown
     try:
         client_file_dict = {
             "filetype-dataset-archive": optional_file_archive,
@@ -1117,7 +1117,7 @@ return the object_id
             submitter_object_id = api_get_submitter(parameters.submitter_id)
         except Exception as e:
             logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
-            add_submitter_response = api_add_submitter(parameters.submitter_id)["submitter_action_status"]
+            add_submitter_response = api_add_submitter(parameters.submitter_id)
 
         entry = mongo_objects.find({"object_id": parameters.dataset_object_id}, {"_id":0})
         assert  _mongo_count(mongo_objects, {"object_id": parameters.object_id}) == 1
@@ -1162,7 +1162,7 @@ return the object_id
         
         return {
             "object_id": agent_object_id,
-            "submitter_action_status": add_submitter_respose["submitter_action_status"]
+            "submitter_action_status": add_submitter_response["submitter_action_status"]
         }
 
     except Exception as e:
