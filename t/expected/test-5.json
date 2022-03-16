@@ -1,4 +1,4 @@
 {
-  "submitter_id": "test@email.com",
-  "submitter_status": "existed"
+  "submitter_action_status": "existed",
+  "submitter_id": "test@email.com"
 }
