@@ -645,12 +645,8 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
 
         #####
         # xxx This code is common with /analyze, break it out:
-        logger.info("[post_object] adding submitter to submitters collection, as needed")
-        try:
-            submitter_object_id = api_get_submitter(parameters.submitter_id)
-        except Exception as e:
-            logger.info("[post_object] record for this submitter ({parameters.submitter_id}) not found, create one")
-            submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
+        logger.info("[post_object] record submitter ({parameters.submitter_id}), if not found create one")
+        submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
         # END
         #####
         

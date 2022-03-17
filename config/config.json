@@ -6,10 +6,9 @@
       "container_URL": "http://fuse-provider-upload:8000",
       "host_name": "localhost",
       "host_port": "8083"
-    },
+    }
   },
   "configuredServices": {
-    
     "fuse-provider-upload": {
       "title": "Custom data",
       "container-network": "fuse",
@@ -17,7 +16,6 @@
       "host_name": "localhost",
       "host_port": "8083"
     },
-    
     "fuse-tool-pca": {
       "title": "Principal Components Analyzer",
       "container-network": "fuse",
@@ -26,5 +24,4 @@
       "host_port": "8086"
     }
   }
-			  
 }
