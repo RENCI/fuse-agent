@@ -650,6 +650,8 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     '''
     logger.info(msg=f"[post_object] top")
     try:
+        # xxx be nice and assert config["configuredServices"][parameters.service_id] exists, something like this:
+        assert (parameters.service_id in _get_services())
         client_file_dict = {
             "filetype-dataset-archive": optional_file_archive,
             "filetype-dataset-expression": optional_file_expressionMatrix,
@@ -807,12 +809,11 @@ async def get_url(object_id: str, file_type: str):
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
         logger.info(msg=f'[get_url] obj={obj}')
         assert obj["agent_status"] == "finished"
+
         # if the object was created from within a docker container, the service_host_url is going to be the container name, which you NEVER WANT for an externally accessible URL.
         # but you do want it for service calls across the docker network
         # how about creating a "file_host_url" field and populate it in /submit, /analyze with the config file
-        file_host_url = obj["file_host_url"]
-        service_object_id = obj["service_object_id"]
-        obj_url = f'{file_host_url}/files/{service_object_id}'
+        obj_url = f'{obj["file_host_url"]}/files/{obj["loaded_file_objects"][file_type]}'
         logger.info(msg=f"[get_url] built url = ={obj_url}")
         return {"object_id": object_id, "url": obj_url}
     except Exception as e:
