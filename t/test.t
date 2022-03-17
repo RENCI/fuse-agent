@@ -28,7 +28,7 @@ our $verbose = 0;
 our $dry_run = 0;
 
 our $OBJID="test_object_id";
-our $SUBMITTER_ID='test@email.com';
+our $SUBMITTER_ID='test-xxx@email.com';
 
 # read the .env file
 use Dotenv;      

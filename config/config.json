@@ -1,4 +1,13 @@
 {
+  "resultsServices": {
+    "fuse-provider-results": {
+      "title": "Use this server for storing and retrieving results",
+      "container-network": "fuse",
+      "container_URL": "http://fuse-provider-upload:8000",
+      "host_name": "localhost",
+      "host_port": "8083"
+    },
+  },
   "configuredServices": {
     
     "fuse-provider-upload": {

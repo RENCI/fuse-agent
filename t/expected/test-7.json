@@ -1,6 +1,6 @@
 {
   "created_time": "xxx",
-  "object_id": "agent_test@email.com",
+  "object_id": "agent_test-xxx@email.com",
   "status": "approved",
-  "submitter_id": "test@email.com"
+  "submitter_id": "test-xxx@email.com"
 }
