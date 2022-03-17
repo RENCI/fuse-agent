@@ -89,6 +89,11 @@ class Service(BaseModel):
     id: str
     title: str = None
     URL: HttpUrl = None
+
+class SubmitterActionStatus(str, Enum):
+    unknown='unknown' 
+    created='created' 
+    existed='existed' 
     
 class SubmitterStatus(str, Enum):
     requested='requested'
@@ -175,15 +180,25 @@ def _get_services(prefix = ""):
     config = _read_config()
     return list(filter(lambda x: x.startswith(prefix), list(config["configuredServices"])))
     
-def _get_url(service_id: str):
+def _get_url(service_id: str, url_type: str = "service_host"):
     config = _read_config()
-    service_host_name = config["configuredServices"][service_id]["host_name"]
-    if service_host_name == os.getenv("HOST_NAME") or service_host_name == 'localhost':
-        # co-located service, use container name and network instead:
-        assert config["configuredServices"][service_id]["container-network"] == os.getenv("CONTAINER_NETWORK")
-        url = config["configuredServices"][service_id]["container_URL"]
-    else: 
-        url = config["configuredServices"][service_id][f"http://{service_host_name}:{service_host_port}"]
+    if url_type == "service_host":
+        service_host_name = config["configuredServices"][service_id]["host_name"]
+        service_host_port = config["configuredServices"][service_id]["host_port"]
+        if service_host_name == os.getenv("HOST_NAME") or service_host_name == 'localhost':
+            # co-located service, use container name and network instead:
+            assert config["configuredServices"][service_id]["container-network"] == os.getenv("CONTAINER_NETWORK")
+            url = config["configuredServices"][service_id]["container_URL"]
+        else: 
+            url = f"http://{service_host_name}:{service_host_port}"
+    elif url_type == "file_host":
+        file_host_name = config["configuredServices"][service_id]["file_host_name"]
+        file_host_port = config["configuredServices"][service_id]["file_host_port"]
+        url = f"http://{file_host_name}:{file_host_port}"
+    else:
+        logger.error("[_get_url] ! unrecognized url_type {url_type}")
+        return None
+    
     return url    
 
 def _submitter_object_id(submitter_id):
@@ -275,9 +290,9 @@ def api_add_submitter(submitter_id: str):
     object_id = _submitter_object_id(submitter_id)
     num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
 
-    submitter_status = "unknown"
+    submitter_action_status = SubmitterActionStatus.unknown
     if num_matches == 1:
-        submitter_status = "existed"
+        submitter_action_status = SubmitterActionStatus.existed
     else :
         assert num_matches == 0
         submitter_object = Submitter(
@@ -289,11 +304,11 @@ def api_add_submitter(submitter_id: str):
         logger.info(msg=f"[api_add_submitter] submitter_object={submitter_object}")
         _mongo_insert(mongo_submitters, submitter_object.dict())
         logger.info(msg="[api_add_submitter] submitter added.")
-        submitter_status = "created"
+        submitter_action_status = SubmitterActionStatus.created
 
     ret_val = {
         "submitter_id": submitter_id,
-        "submitter_status": submitter_status
+        "submitter_action_status": submitter_action_status
     }
     logger.info(msg=f"[api_add_submitter] returning: {ret_val}")
     return ret_val
@@ -506,9 +521,11 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
         obj = entry[0]
         host_url = _get_url(obj["parameters"]["service_id"])
+        file_host_url = _get_url(obj["parameters"]["service_id"], "file_host")
         m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
                                      "service_host_url": host_url,
+                                     "file_host_url": file_host_url,
                                      "agent_status": "started"
                                  }})
         logger.info(msg=f"[_remote_submit_file] ({file_type}) host_url={host_url}")
@@ -643,12 +660,8 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             num_files_requested=num_files_requested+(client_file_dict[file_type] is not None)
         assert num_files_requested > 0 or parameters.accession_id != None
 
-        #####
-        # xxx This code is common with /analyze, break it out:
         logger.info("[post_object] record submitter ({parameters.submitter_id}), if not found create one")
-        submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
-        # END
-        #####
+        add_submitter_response = api_add_submitter(parameters.submitter_id)
         
         #####
         # xxx This code is common with /analyze, break it out:
@@ -720,7 +733,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         
         return {
             "object_id": agent_object_id,
-            "submitter_status": submitter_status
+            "submitter_action_status": add_submitter_response["submitter_action_status"]
         }
     except Exception as e:
         detail_str = f'Exception {type(e)} occurred while loading object to service=[{parameters.service_id}],  message=[{e}] ! traceback={traceback.format_exc()}'
@@ -794,9 +807,12 @@ async def get_url(object_id: str, file_type: str):
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
         logger.info(msg=f'[get_url] obj={obj}')
         assert obj["agent_status"] == "finished"
-        host_url = obj["service_host_url"]
+        # if the object was created from within a docker container, the service_host_url is going to be the container name, which you NEVER WANT for an externally accessible URL.
+        # but you do want it for service calls across the docker network
+        # how about creating a "file_host_url" field and populate it in /submit, /analyze with the config file
+        file_host_url = obj["file_host_url"]
         service_object_id = obj["service_object_id"]
-        obj_url = f'{host_url}/files/{service_object_id}'
+        obj_url = f'{file_host_url}/files/{service_object_id}'
         logger.info(msg=f"[get_url] built url = ={obj_url}")
         return {"object_id": object_id, "url": obj_url}
     except Exception as e:
@@ -970,9 +986,11 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters)
         obj = entry[0]
         # set the request URL for the tool
         host_url = _get_url(obj["parameters"]["service_id"])
+        file_host_url = _get_url(obj["parameters"]["service_id"], "file_host")
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
                                  "service_host_url": host_url,
+                                 "file_host_url": file_host_url,
                                  "agent_status": "started"
                              }})
         logger.info(msg=f"{function_name} ({file_type}) host_url={host_url}")
@@ -1086,18 +1104,8 @@ return the object_id
     try:
         function_name="[analyze]"
         requested_object_id = requested_results_object_id
-        ###########
-        # xxx This code is common with /load, break it out:
-        # add submitter
-        logger.info("{function_name} adding submitter to submitters collection, as needed")
-        try:
-            submitter_object_id = api_get_submitter(parameters.submitter_id)
-        except Exception as e:
-            logger.info("{function_name} record for this submitter ({parameters.submitter_id}) not found, create one")
-            submitter_status = api_add_submitter(parameters.submitter_id)["submitter_status"]
-        # END
-        #####
-
+        logger.info("{function_name} if record for this submitter ({parameters.submitter_id}) is not found, create one")
+        add_submitter_response = api_add_submitter(parameters.submitter_id)
         # quick check that datasets exist in the db
         for d in parameters["datasets"]:
             assert  _mongo_count(mongo_objects, {"object_id": d.provider_dataset_object_id}) == 1
@@ -1114,6 +1122,7 @@ return the object_id
             "created_time": datetime.utcnow(),
             "parameters": parameters.dict(), # xxx?
             "service_host_url": None,
+            "file_host_url": None,
             "agent_status": None,
             "detail": None,
         }
@@ -1146,7 +1155,7 @@ return the object_id
         
         return {
             "object_id": agent_object_id,
-            "submitter_status": submitter_status
+            "submitter_action_status": add_submitter_response["submitter_action_status"]
         }
 
     except Exception as e:

@@ -2,26 +2,39 @@
   "resultsServices": {
     "fuse-provider-results": {
       "title": "Use this server for storing and retrieving results",
+      "__comment1__":"Use the following if running fuse-agent on a docker network",
       "container-network": "fuse",
       "container_URL": "http://fuse-provider-upload:8000",
+      "__comment2__":"Use the following if running fuse-agent as a stand-alone app",
       "host_name": "localhost",
-      "host_port": "8083"
+      "host_port": "8083",
+      "__comment3__":"Use the following for file server",
+      "file_host_name": "localhost",
+      "file_host_port": "8083"
     }
   },
   "configuredServices": {
     "fuse-provider-upload": {
       "title": "Custom data",
+      "__comment1__":"Use the following if running fuse-agent on a docker network",
       "container-network": "fuse",
       "container_URL": "http://fuse-provider-upload:8000",
+      "__comment2__":"Use the following if running fuse-agent as a stand-alone app",
       "host_name": "localhost",
-      "host_port": "8083"
+      "host_port": "8083",
+      "__comment3__":"Use the following for file server",
+      "file_host_name": "localhost",
+      "file_host_port": "8083"
     },
     "fuse-tool-pca": {
       "title": "Principal Components Analyzer",
+      "__comment1__":"Use the following if running fuse-agent on a docker network",
       "container-network": "fuse",
       "container_URL": "http://fuse-tool-pca:8000",
+      "__comment2__":"Use the following if running fuse-agent as a stand-alone app",
       "host_name": "localhost",
-      "host_port": "8086"
+      "host_port": "8086",
+      "__comment3__":"Tools don't have file servers, they just return their results in a tar file"
     }
   }
 }
