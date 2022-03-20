@@ -178,22 +178,22 @@ def _read_config():
 def _get_services(prefix = ""):
     assert prefix == "fuse-provider-" or prefix == "fuse-tool-" or prefix == ""
     config = _read_config()
-    return list(filter(lambda x: x.startswith(prefix), list(config["configuredServices"])))
+    return list(filter(lambda x: x.startswith(prefix), list(config["configured-services"])))
     
 def _get_url(service_id: str, url_type: str = "service_host"):
     config = _read_config()
     if url_type == "service_host":
-        service_host_name = config["configuredServices"][service_id]["host_name"]
-        service_host_port = config["configuredServices"][service_id]["host_port"]
+        service_host_name = config["configured-services"][service_id]["host_name"]
+        service_host_port = config["configured-services"][service_id]["host_port"]
         if service_host_name == os.getenv("HOST_NAME") or service_host_name == 'localhost':
             # co-located service, use container name and network instead:
-            assert config["configuredServices"][service_id]["container-network"] == os.getenv("CONTAINER_NETWORK")
-            url = config["configuredServices"][service_id]["container_URL"]
+            assert config["configured-services"][service_id]["container-network"] == os.getenv("CONTAINER_NETWORK")
+            url = config["configured-services"][service_id]["container_URL"]
         else: 
             url = f"http://{service_host_name}:{service_host_port}"
     elif url_type == "file_host":
-        file_host_name = config["configuredServices"][service_id]["file_host_name"]
-        file_host_port = config["configuredServices"][service_id]["file_host_port"]
+        file_host_name = config["configured-services"][service_id]["file_host_name"]
+        file_host_port = config["configured-services"][service_id]["file_host_port"]
         url = f"http://{file_host_name}:{file_host_port}"
     else:
         logger.error("[_get_url] ! unrecognized url_type {url_type}")
@@ -651,7 +651,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     '''
     logger.info(msg=f"[post_object] top")
     try:
-        # xxx be nice and assert config["configuredServices"][parameters.service_id] exists, something like this:
+        # xxx be nice and assert config["configured-services"][parameters.service_id] exists, something like this:
         assert (parameters.service_id in _get_services())
         client_file_dict = {
             "filetype-dataset-archive": optional_file_archive,
@@ -987,7 +987,7 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
 
         tool_host_url = _get_url(obj["parameters"]["service_id"])
         config = _read_config()
-        file_host_url = f'http://{config["resultsServices"]["fuse-provider-results"]["file_host_name"]}:{config["resultsServices"]["fuse-provider-results"]["file_host_port"]}'
+        file_host_url = f'http://{config["results_services"]["fuse-provider-results"]["file_host_name"]}:{config["results_services"]["fuse-provider-results"]["file_host_port"]}'
         logger.info(msg=f'{function_name} set the file_host_url to value of fuse-provider-results=({file_host_url}),and the tool url to=({tool_host_url})')
 
         m_objects.update_one({"object_id": agent_object_id},
@@ -1021,8 +1021,12 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
         logger.info(msg=f'{function_name} params={json.dumps(obj["parameters"])}')
 
         # 2. post the files required by the analysis to the analysis endpoint
-        submit_url=f'{_get_url(obj["parameters"]["service_id"])}/submit'
-        logger.info(msg=f"{function_name} submit_url={submit_url}")
+        analysis_host_url=f'{_get_url(obj["parameters"]["service_id"])}/submit'
+        #analysis_host_submit_url="http://localhost:8086/submit" # xxx try just hard-coding it - no
+        #analysis_host_submit_url="http://172.18.0.4:8086/submit" # xxx try just hard-coding it - no
+        #analysis_host_submit_url="http://172.18.0.1:8086/submit" # xxx try just hard-coding it - no
+        analysis_host_submit_url="http://fuse-tool-pca:8086/submit" # xxx try just hard-coding it - no
+        logger.info(msg=f"{function_name} submit_url={analysis_host_url}")
 
         # xxx take out this hard-coding - synch-up field names between too-pca and ToolParameters
         headers = {
@@ -1034,9 +1038,7 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
             "gene_expression_url": dataset_file_url
         }
         logger.info(msg=f'{function_name} params(hardcoded)={json.dumps(params)}')
-        # xxx put this back in 
-        # analysis_response = requests.post(submit_url, params=obj["parameters"], ?submitter_id=krobasky%40renci.org&number_of_components=3' )
-        analysis_response = requests.post(submit_url, params=params, headers=headers) # xxx
+        analysis_response = requests.post(analysis_host_submit_url, params=params, headers=headers) # xxx
         logger.info(msg=f'{function_name} analysis_response.status_code={analysis_response.status_code}')
         assert analysis_response.status_code == 200
 
@@ -1047,9 +1049,10 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
             s.write(results) # xxx make this a zipped file
         logger.info(msg=f'{function_name} wrote response to /tmp/{agent_object_id}')
         config = _read_config()
-        assert config["resultsServices"]["fuse-provider-results"]["container-network"] == os.getenv("CONTAINER_NETWORK")
-        # xxx results_host_url = config["resultsServices"]["fuse-provider-results"]["container_URL"] # use get_url here
-        results_host_url = "http://localhost:8083" # xxx don't hardcode this
+        assert config["results_services"]["fuse-provider-results"]["container-network"] == os.getenv("CONTAINER_NETWORK")
+        # xxx results_host_url = config["results_services"]["fuse-provider-results"]["container_URL"] # use get_url here
+        #results_host_url = "http://localhost:8083" # xxx don't hardcode this
+        results_host_url = "http://fuse-provider-upload:8083" # xxx don't hardcode this
         logger.info(msg=f'{function_name} results provider host_url={results_host_url}')
         file_data = {'client_file': open(results_file_path, 'rb')} # xxx make this a zipped file
         headers = {
@@ -1136,6 +1139,7 @@ return the object_id
         '''
         # xxx
         detail_str = ""
+        dataset_object_id = None
         requested_object_id = requested_results_object_id
         logger.info(f"{function_name} if record for this submitter ({parameters.submitter_id}) is not found, create one")
         add_submitter_response = api_add_submitter(parameters.submitter_id)
@@ -1197,10 +1201,9 @@ return the object_id
 
     except Exception as e:
         raise HTTPException(status_code=404,
-                            detail=f"{function_name} ! Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
+                            detail=f"{function_name} ! (dataset_object_id={dataset_object_id}) Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
         
 
-    
     
 if __name__=='__main__':
         uvicorn.run("main:app", host='0.0.0.0', port=int(os.getenv("HOST_PORT")), reload=True )
