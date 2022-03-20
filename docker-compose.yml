@@ -2,8 +2,7 @@ version: '3.8'
 services:
   fuse-agent:
     container_name: ${CONTAINER_NAME}
-    build:
-      context: .
+    build: .
     #restart: always
     env_file: .env
     ports:
@@ -11,7 +10,7 @@ services:
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - ${CONFIG_PATH}:/app/config.json
-        - ./data:/app/data
+        - ${RELATIVE_DATA_PATH}:/app/data
     networks:
       - agent_network
     depends_on:
@@ -25,7 +24,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/db:/data/db
+      - ${RELATIVE_DATA_PATH}/db:/data/db
     expose:
       - ${MONGO_PORT}
     networks:

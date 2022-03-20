@@ -1,43 +1,25 @@
 {
-  "results-services": {
-    "fuse-provider-results": {
+  "results-provider-services": {
+    "default": "fuse-provider-upload",
+    "fuse-provider-upload": {
       "title": "Results",
       "description": "Use this server for storing and retrieving results",
-      "submit_url": "http://fuse-provider-upload:8000",
-      "file_url": "http://localhost:8083",
-      "--1": "--------------------------------------------------",
-      "container-network": "fuse",
-      "container_URL": "http://fuse-provider-upload:8000",
-      "host_name": "localhost",
-      "host_port": "8083",
-      "file_host_name": "localhost",
-      "file_host_port": "8083"
+      "service_url": "http://fuse-provider-upload:8000",
+      "file_url": "http://localhost:8083"
     }
   },
   "configured-services": {
     "fuse-provider-upload": {
       "title": "Datasets",
       "description": "For uploading datasets for analysis",
-      "submit_url": "http://fuse-provider-upload:8000",
-      "file_url": "http://localhost:8083",
-      "--1": "----------------------------------------------",
-      "container-network": "fuse",
-      "container_URL": "http://localhost:8083",
-      "host_name": "localhost",
-      "host_port": "8083",
-      "file_host_name": "localhost",
-      "file_host_port": "8083"
+      "service_url": "http://fuse-provider-upload:8000",
+      "file_url": "http://localhost:8083"
     },
     "fuse-tool-pca": {
       "title": "Principal Components Analyzer",
       "description": "Create a table with the given amount principal components",
-      "submit_url": "http://fuse-tool-pca:8000",
-      "file_url": "http://localhost:8086",
-      "--2": "----------------------------------------------",
-      "container-network": "fuse",
-      "container_URL": "http://localhost:8086",
-      "host_name": "localhost",
-      "host_port": "8086"
+      "service_url": "http://fuse-tool-pca:8000",
+      "file_url": "http://localhost:8086"
     }
   }
 }

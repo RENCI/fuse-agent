@@ -1,0 +1,25 @@
+{
+  "results-provider-services": {
+    "default": "fuse-provider-upload",
+    "fuse-provider-upload": {
+      "title": "Results",
+      "description": "Use this server for storing and retrieving results",
+      "service_url": "http://localhost:8083",
+      "file_url": "http://localhost:8083"
+    }
+  },
+  "configured-services": {
+    "fuse-provider-upload": {
+      "title": "Datasets",
+      "description": "For uploading datasets for analysis",
+      "service_url": "http://localhost:8083",
+      "file_url": "http://localhost:8083"
+    },
+    "fuse-tool-pca": {
+      "title": "Principal Components Analyzer",
+      "description": "Create a table with the given amount principal components",
+      "service_url": "http://localhost:8086",
+      "file_url": "http://localhost:8086"
+    }
+  }
+}
