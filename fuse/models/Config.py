@@ -1,10 +1,11 @@
 from pydantic import BaseModel
 
+
 class LogConfig(BaseModel):
     """Logging configuration to be set for the server"""
     
     LOGGER_NAME: str = "fuse-agent"
-    LOG_FORMAT: str = "%(levelprefix)s | %(asctime)s | %(message)s"
+    LOG_FORMAT: str = "%(asctime)s | %(levelname)s | %(funcName)s | %(message)s"
     LOG_LEVEL: str = "DEBUG"
     
     # Logging config
