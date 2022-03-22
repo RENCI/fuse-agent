@@ -1,3 +1,3 @@
 {
-  "detail": "! Message=[ ] Error while deleting (test_dataset_object_id), status=[failed] stderr=[ ? Exception <class 'AssertionError'> occurred while deleting agent objec test_dataset_object_id message=[] ! traceback=Traceback (most recent call last):\n  File \"/home/krobasky/immcellfie/fuse-agent/main.py\", line 919, in _remote_delete_object\n    assert _mongo_count(mongo_objects, {\"object_id\":agent_object_id}) == 1\nAssertionError\n]"
+  "detail": "! Message=[ ] Error while deleting (test_dataset_object_id), status=[failed] stderr=[ ? Exception <class 'AssertionError'> occurred while deleting agent objec test_dataset_object_id message=[] ! traceback=Traceback (most recent call last):\n  File \"/home/krobasky/immcellfie/fuse-agent/main.py\", line 936, in _remote_delete_object\n    assert _mongo_count(mongo_objects, {\"object_id\":agent_object_id}) == 1\nAssertionError\n]"
 }
