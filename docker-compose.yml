@@ -24,7 +24,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/db:/data/db
+      - mongodb_data_container:/data/db
     expose:
       - ${MONGO_PORT}
     networks:
@@ -48,3 +48,5 @@ networks:
     name: ${CONTAINER_NETWORK}
     external: true
 
+volumes:
+  mongodb_data_container:
