@@ -80,9 +80,9 @@ $fn = "provider-1.json";
 files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${DATASET_OBJID}",
 		     "-F service_id=${service_id} " .
 		     "-F submitter_id=${SUBMITTER_ID} " .
-		     "-F data_type=dataset-geneExpression " .
+		     "-F data_type=class_dataset_expression " .
 		     "-F version=1.0 " .
-		     "-F 'optional_file_expressionMatrix=@./t/input/expression.csv;type=application/csv' " .
+		     "-F 'optional_file_expression=@./t/input/expression.csv;type=application/csv' " .
 		     "-H 'Content-Type: multipart/form-data' -H 'accept: application/json'"),
 	                                                                                                   "($fn) Submit csv file");
 sleep(1); # wait for job queue to catch up
@@ -94,7 +94,7 @@ files_eq(f($fn), "t/out/${fn}",                                                 
 
 # currently, there is no way to parse the object out of the url so this is just a smoke-test
 $fn = "provider-2b.json";
-generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$DATASET_OBJID}/type/filetype-dataset-expression"), ["url"]);
+generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$DATASET_OBJID}/type/filetype_dataset_expression"), ["url"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get URL for dataset object's file");
 
 $fn = "provider-2c.json";

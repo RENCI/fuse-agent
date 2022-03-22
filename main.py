@@ -8,7 +8,7 @@ import shutil
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Query
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl
+from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl, AnyHttpUrl
 from email_validator import validate_email, EmailNotValidError
 from typing import Type, Optional, List, Union, Dict
 from enum import Enum
@@ -207,6 +207,31 @@ def _get_url(service_id: str, url_type: str = "service_url", host_type: str = "c
 
 def _submitter_object_id(submitter_id):
     return "agent_" + submitter_id 
+
+####################
+# service-info methods and cdm's
+def _get_service_info(service_id):
+    config = _read_config()
+    response = requests.get(f'{config["configured-services"][service_id]["service_url"]}/service-info')
+    return response.json()
+
+class ServiceIOType(str, Enum):
+    datasetInput='inputDatasetType' 
+    resultsOutput='outputResultsType'
+
+class ServiceIOField(str, Enum):
+    dataType='data_type' 
+    fileTypes='file_types'
+    fileType='file_type'
+    mimeType='mime_type'
+    fileExt='file_extension'
+
+def _get_service_value(service_id, iotype: ServiceIOType, field: ServiceIOField):
+    assert service_id.startswith("fuse-tool-")
+    service_info = _get_service_info()
+    return service_info[iotype][field]
+####################
+
 
 # xxx get with David to find out what else this should return in the json
 @app.get("/services/providers", summary="Returns a list of the configured data providers", tags=["Get","Service","Data Provider Service"])
@@ -457,17 +482,32 @@ class ToolParameters(BaseModel):
                                    description="unique submitter id (email)")
     number_of_components: Optional[int] = 3
     dataset: str = Field(...)
-    # example={
-    #  "service_id": str 
-    #  "provider_dataset_object_id": "agent_object_id",
-    #  "files": [{"filetype-dataset-expression": "http://...","filetype-dataset-properties": "http://..."]
-    #  initially, "filetype-..." key to None, job fills in the urls after inspecting agent_object_id
-    # }
     description: Optional[str] =  Field(None, title="Description",
                                         description="detailed description of the requested analysis being performed (optional)")
+    expression_url: Optional[AnyHttpUrl] = Field(None, title="Gene expression URL",
+                                                      description="Optionally grab expression from an URL instead of uploading a file")
+    properties_url: Optional[AnyHttpUrl] = Field(None, title="Properties URL",
+                                                      description="Optionally grab properties from an URL instead of uploading a file")
+    archive_url: Optional[AnyHttpUrl] = Field(None, title="Archive URL",
+                                                      description="Optionally grab all the files from an URL to an archive instead of uploading file(s)")
     results_provider_service_id: Optional[str] = Field(_get_default_results_provider_service_id(), title="Data Provider for Results",
                                             description="If not set, the system default will be provided. e.g., 'fuse-provider-upload'")
 
+# xxx cdm
+from enum import Enum
+class DataType(str, Enum):
+    geneExpression='class_dataset_expression'
+    resultsPCATable='class_results_PCATable'
+    resultsCellFIE='class_results_CellFIE'
+    # xxx to add more datatypes: expand this
+
+class FileType(str, Enum):
+    datasetGeneExpression='filetype_dataset_expression'
+    datasetProperties='filetype_dataset_properties'
+    datasetArchive='filetype_dataset_archive'
+    resultsPCATable='filetype_results_PCATable'
+    resultsCellFIE='filetype_results_CellFIE'
+    # xxx to add more datatypes: expand this
     
     
 @as_form
@@ -478,8 +518,8 @@ class ProviderParameters(BaseModel):
     submitter_id: EmailStr = Field(...,
                                    title="email",
                                    description="unique submitter id (email)")
-    data_type: Optional[str] = Field(None, title="Data type of this object",
-                                     description="the type of data; options are: dataset-geneExpression, results-pca, results-cellularFunction. Not all types are supported by all providers")
+    data_type: DataType = Field(..., title="Data type of this object",
+                                description="the type of data associated with this object (e.g, results or input dataset)")
     description: Optional[str] =  Field(None, title="Description",
                                         description="detailed description of this data (optional)")
     version: Optional[str] =  Field(None, title="Version of this object",
@@ -493,7 +533,7 @@ class ProviderParameters(BaseModel):
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
     
 
-
+# SHARED
 def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
     try:
         object_id = f"{prefix}_{submitter_id}_{uuid.uuid4()}"
@@ -525,8 +565,6 @@ def _set_agent_status(accession_id, service_object_id, num_files_requested, num_
 async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_path:str):
     try:
         function_name="[_remote_submit_file]"
-        
-        ##### common with _remote_submit_analysis, break it out
         # because this runs out-of-band, or maybe the async is doing it, I think we might need a new mongodb connection?
         logger.info(msg=f"{function_name} ({file_type}) connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}, agent_file_path:{agent_file_path} ")
         my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
@@ -540,70 +578,50 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
         assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
         obj = entry[0]
+        # update agent object with info from parameters
         logger.info(msg=f'{function_name} service_id={obj["parameters"]["service_id"]}')
-        host_url = _get_url(obj["parameters"]["service_id"])
-        file_host_url = _get_url(obj["parameters"]["service_id"], "file_url")
         m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
-                                     "service_host_url": host_url,
-                                     "file_host_url": file_host_url,
+                                     "service_host_url": _get_url(obj["parameters"]["service_id"]),
+                                     "file_host_url": _get_url(obj["parameters"]["service_id"], "file_url"),
                                      "agent_status": "started"
                                  }})
-        logger.info(msg=f"{function_name} ({file_type}) host_url={host_url}")
-        submit_url=f"{host_url}/submit"
-        logger.info(msg=f"{function_name} ({file_type}) posting to url={submit_url}")
-        # common code ^^^
-        #####
+        # post file data to provider
+        logger.info(msg=f'{function_name} ({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
         (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
         logger.info(msg=f"{function_name} ({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
-
-        # xxx use this again for submitting an accession_id/apikey
         file_data = {'client_file': open(agent_file_path, 'rb')}
         headers = {
             'accept': 'application/json',
             'Content-Type': 'multipart/form-data',
         }
-        # "data_type": file_type, # xxx 
         params = {
             "submitter_id": obj["parameters"]["submitter_id"],
-            "data_type": "dataset-geneExpression", # xxx fix this!!
+            "data_type": obj["parameters"]["data_type"],
+            "file_type": file_type,
             "version": "1.0"
         }
         logger.info(msg=f"params={json.dumps(params)}")
         files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
-        response = requests.post(submit_url, params=params, files=files)
-
-        #response = requests.post('http://localhost:8083/submit?submitter_id=krobasky%40gmail.com&data_type=dataset-geneExpression&version=1.0', headers=headers, files=files)
-        #response = requests.post(submit_url,
-        #                        data = request_obj,
-        #                       timeout=timeout_seconds,
-        #                      files=file_data)
-        
+        logger.info(msg=f'{function_name} ({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
+        response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=params, files=files)
+        # unlink tmp copy of the posted file
         logger.info(msg=f"{function_name} ({file_type}) provider request complete for this file, removing file {agent_file_path}")
         os.unlink(agent_file_path)
-
+        # if successful, update agent object with status and provider object id
         if response.status_code == 200:        
-            json_obj = response.json()
-            #logger.info(msg=f"{function_name} ({file_type}) response={json.dumps(json_obj, indent=4)}")
-            service_object_id = json_obj["object_id"]
-            # xxx map the returned service_object_id back onto the agent_object_id but updatin that object
-            loaded_file_objects = obj["loaded_file_objects"]
-            loaded_file_objects[file_type] = service_object_id
-            logger.info(msg=f"{function_name} ({file_type}) set file_type={file_type} = {service_object_id}; loaded_file_objects={loaded_file_objects}")
+            provider_object = response.json()
+            #logger.info(msg=f"{function_name} ({file_type}) response={json.dumps(provider_object, indent=4)}")
+            obj["loaded_file_objects"][file_type] = {}
+            logger.info(msg=f'{function_name} Setting loaded_file_objects for {file_type} on {agent_object_id}')
+            obj["loaded_file_objects"][file_type]["object_id"] = provider_object["object_id"]
+            obj["loaded_file_objects"][file_type]["service_host_url"] = _get_url(obj["parameters"]["service_id"])
+            obj["loaded_file_objects"][file_type]["file_host_url"] = _get_url(obj["parameters"]["service_id"], "file_url")
+            logger.info(msg=f'{function_name}({file_type}) {provider_object["object_id"]}; loaded_file_objects={obj["loaded_file_objects"]}')
             m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
-                                     "service_object_id": service_object_id, # xxx remove this everywhere
-                                     "loaded_file_objects": loaded_file_objects,
+                                     "loaded_file_objects": obj["loaded_file_objects"],
                                  }})
-            ''' xxx ??? figure out how to handle a zipfile now
-            loaded_file_objects = obj.file_objects.append({file_type: service_object_id})
-            m_objects.update_one({"object_id": agent_object_id},
-                                     {"$set": {
-                                         "loaded_file_objects": loaded_file_objects,
-                                         "agent_status": _set_agent_status(obj["parameters"]["accession_id"], obj["parameters"]["service_object_id"],
-                                                                           obj["parameters"]["num_files_requested"],len(loaded_file_objects))
-                                      }})
-            '''
         else:
             detail_str = f'status_code={response.status_code}, response={response.text}'
             logger.error(msg=f"{function_name} ({file_type}) ! {detail_str}")
@@ -617,12 +635,11 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         logger.info(msg=f"{function_name} ({file_type}) object {agent_object_id} successfully created.")
         try:
             # check if another thread made an update:
-            entry = m_objects.find({"object_id":agent_object_id},{"_id":0,"loaded_file_objects":1, "num_files_requested":1})
+            entry = m_objects.find({"object_id":agent_object_id}, {"_id":0})
             assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
             obj = entry[0]
             logger.info(msg=f'{function_name} ({file_type}) obj={obj}')
-            logger.info(msg=f'{function_name} ({file_type}) Loaded objects={len(obj["loaded_file_objects"])}, num requested={obj["num_files_requested"]}')
-            if len(loaded_file_objects) == obj["num_files_requested"]:
+            if len(obj["loaded_file_objects"]) == obj["num_files_requested"]:
                 logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
                 os.rmdir(agent_file_dir)
                 m_objects.update_one({"object_id": agent_object_id},
@@ -638,10 +655,9 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
         logger.error(msg=f"{function_name} ({file_type}) ! status=failed, {detail_str}")
         try:
-            detail_str = f'Exception {type(e)} occurred while submitting object to service, obj=({agent_object_id}), service_object_id=({service_object_id}) message=[{e}] ! traceback={traceback.format_exc()}'
+            detail_str = f'Exception {type(e)} occurred while submitting object to service, obj=({agent_object_id}), message=[{e}] ! traceback={traceback.format_exc()}'
             m_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
-                                         "service_object_id": service_object_id,
                                          "agent_status": "failed",
                                          "detail": f'{function_name}: {detail_str}'
                                      }})
@@ -655,8 +671,8 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
 async def post_object(parameters: ProviderParameters = Depends(ProviderParameters.as_form),
                       requested_object_id: Optional[str] =  Query(None, title="Request an object id, not guaranteed. mainly for testing"),
                       optional_file_archive: UploadFile = File(None),
-                      optional_file_expressionMatrix: UploadFile = File(None),
-                      optional_file_samplePropertiesMatrix: UploadFile = File(None)
+                      optional_file_expression: UploadFile = File(None),
+                      optional_file_properties: UploadFile = File(None)
                       ):
     '''
     warning: executing this repeatedly for the same service/object will create duplicates in the database
@@ -664,9 +680,9 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
     Service will be called repeatedly, once per file and once per accession_id, based on what is provided.
     Must provide either an accession_id or one of the three optional files to avoid a 500 error
     The ids for the submitted files map to fields under the agent metadata's field, "loaded_file_objects", as follows:
-            "filetype-dataset-archive": optional_file_archive,
-            "filetype-dataset-expression": optional_file_expressionMatrix,
-            "filetype-dataset-properties": optional_file_samplePropertiesMatrix
+            "filetype_dataset_archive": optional_file_archive,
+            "filetype_dataset_expression": optional_file_expression,
+            "filetype_dataset_properties": optional_file_properties
 
     '''
     logger.info(msg=f"[post_object] top")
@@ -674,9 +690,9 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         # xxx be nice and assert config["configured-services"][parameters.service_id] exists, something like this:
         assert (parameters.service_id in _get_services())
         client_file_dict = {
-            "filetype-dataset-archive": optional_file_archive,
-            "filetype-dataset-expression": optional_file_expressionMatrix,
-            "filetype-dataset-properties": optional_file_samplePropertiesMatrix
+            "filetype_dataset_archive": optional_file_archive,
+            "filetype_dataset_expression": optional_file_expression,
+            "filetype_dataset_properties": optional_file_properties
         }
         num_files_requested=0
         for file_type in client_file_dict.keys():
@@ -706,7 +722,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             "file_host_url": None, # url to the results data server (dataset urls are in the parameters  xxx - set this in callback
             
             # "service_object_id": None, # id created on provider for this upload
-            "loaded_file_objects": {}, # e.g., "filetype-dataset-expression": "upload_<email>_<remote_object_id>", ...
+            "loaded_file_objects": {}, # e.g., "filetype_dataset_expression": "upload_<email>_<remote_object_id>", ...
             "num_files_requested": num_files_requested
         }
         logger.info(msg=f"[post_object] inserting agent-side object for provider={agent_object}")
@@ -823,14 +839,14 @@ from starlette.responses import StreamingResponse
 @app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that", tags=["Get","Service","Data Provider Service","Tool Service"])
 async def get_url(object_id: str, file_type: str):
     '''
-    filetype is one of "filetype-dataset-archive", "filetype-dataset-expression", "filetype-dataset-properties", "filetype-results-cellularFunction",  or "filetype-results-PCATable"
+    filetype is one of "filetype_dataset_archive", "filetype_dataset_expression", "filetype_dataset_properties", "filetype_results_cellularFunction",  or "filetype_results_PCATable"
     '''
     try:
         # xxx make the parameter a FileType enum instead of a string
         logger.info(msg=f"[get_url] find local object={object_id}")
         entry = mongo_objects.find({"object_id": object_id},{"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id":object_id}) == 1
-        obj = entry.next()
+        obj = entry[0]
         logger.info(msg=f'[get_url] found local object, agent_status={obj["agent_status"]}')
         logger.info(msg=f'[get_url] obj={obj}')
         assert obj["agent_status"] == "finished"
@@ -919,7 +935,9 @@ def _remote_delete_object(agent_object_id:str):
         assert _mongo_count(mongo_objects, {"object_id":agent_object_id}) == 1
         obj = entry[0]
 
+        num_deleted = 0
         for file_type in obj["loaded_file_objects"]:
+            info_msg = f'{info_msg}Deleting object file_type={file_type}. '
             service_object_id = obj["loaded_file_objects"][file_type]
             #service_object_id = obj["service_object_id"] # set this early in case there's an exception
             host_url = _get_url(obj["parameters"]["service_id"])
@@ -927,12 +945,16 @@ def _remote_delete_object(agent_object_id:str):
             logger.info(msg=f"{function_name} delete remote object with {delete_url}")
             response = requests.delete(delete_url)
             assert response.status_code == 200 or response.status_code == 404
-            delete_status = "deleted"
             if response.status_code == 404:
-                info_msg += "* Remote object not found when deleting {agent_object_id}"
+                info_msg = f"{info_msg}* Remote object not found when deleting {agent_object_id}. "
                 logger.warn(msg=f"{function_name} * Remote object {service_object_id} not found with {delete_url} when deleting {agent_object_id}")
                 delete_status = "not found"
                 # xxx may want to add this to an audit report for admin or something
+            else:
+                num_deleted = num_deleted + 1
+
+        if num_deleted == len(obj["loaded_file_objects"]):
+            delete_status = "deleted"
 
     except Exception as e:
         logger.warn(msg=f"{function_name} Exception {type(e)} occurred while deleting {agent_object_id}")
@@ -1036,7 +1058,7 @@ async def get_object(object_id: str = Query(default=None, description="unique id
         new_obj["provider"] = {}
         if obj["agent_status"] == "finished":
             for file_type in obj["loaded_file_objects"]:
-                service_object_id = obj["loaded_file_objects"][file_type]
+                service_object_id = obj["loaded_file_objects"][file_type]["object_id"]
                 logger.info(msg=f'[get_object] ({file_type}) REQUEST: {service_object_id}')
                 response = requests.get(f'{obj["service_host_url"]}/objects/{service_object_id}')
                 service_obj_metadata = response.json()
@@ -1049,9 +1071,10 @@ async def get_object(object_id: str = Query(default=None, description="unique id
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while retrieving metadata for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
     
-async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters, file_type):
+async def _remote_analyze_object(agent_object_id:str):
     function_name = "[_remote_analyze_object]"
     try:
+        # INIT #####################################################################################################################
         logger.info(msg=f"{function_name} ({file_type}) connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}")
         # xxx take this out?:
         my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
@@ -1059,108 +1082,85 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
         m_objects=my_mongo_db.objects
         detail_str = ""
         timeout_seconds = g_redis_default_timeout # xxx read this from config.json, what's reasonable here?
-        service_object_id = None # set this early in case there's an exception
-        # get the agent object for this job
+        # get agent object
         logger.info(msg=f"{function_name} ({file_type}) looking up {agent_object_id}")
         entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
         assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
         obj = entry[0]
-
-        tool_host_url = _get_url(obj["parameters"]["service_id"])
-        file_host_url = _get_url(obj["parameters"]["results_provider_service_id"],"file_url","results-provider-services")
-        #config = _read_config()
-        #file_host_url = f'http://{config["results-provider-services"]["fuse-provider-results"]["file_host_name"]}:{config["results-provider-services"]["fuse-provider-results"]["file_host_port"]}'
-        logger.info(msg=f'{function_name} set the file_host_url to value of fuse-provider-results=({file_host_url}),and the tool url to=({tool_host_url})')
-
+        # update to initialize agent object
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
-                                 "service_host_url": tool_host_url,
-                                 "file_host_url": file_host_url,
+                                 "service_host_url": _get_url(obj["parameters"]["service_id"]),
+                                 "file_host_url": _get_url(obj["parameters"]["results_provider_service_id"],"file_url","results-provider-services"),
                                  "agent_status": "started"
                              }})
         logger.info(msg=f'{function_name} agent results object updated with tool and results server urls')
-        # 1. get the data object(s) requested in the parameters
+        # 1. get the data object(s) requested in the parameters #####################################################################
         try:
-            file_type = "filetype-dataset-expression" # xxx fix this hard-coding
-            logger.info(msg=f'{function_name} create url for obj_id=({obj["parameters"]["dataset"]}), filetype=({file_type})')
             entry = m_objects.find({"object_id": obj["parameters"]["dataset"]})
-            provider_obj = entry[0]
-            logger.info(msg=f'{function_name} found one; file_host_url = {provider_obj["file_host_url"]}, for expression file={provider_obj["loaded_file_objects"][file_type]}')
-
-            
-            # xxx put this back in, but use container host instead of server host
-            # xxx dataset_file_url = f'{provider_obj["file_host_url"]}/files/{provider_obj["loaded_file_objects"][file_type]}'
-            dataset_file_url = f'http://fuse-provider-upload:8000/files/upload_krobasky@renci.or_ee665f97-87ef-40f9-8030-98b2e1b5a7c4' # xxx fix this hardcode
-            # xxx make this the object id, not the url
-            # e.g., upload_krobasky@renci.or_ee665f97-87ef-40f9-8030-98b2e1b5a7c4'
-            # not http://...
-            logger.info(msg=f'{function_name} url=({dataset_file_url})')
-            obj["parameters"]["dataset"] = dataset_file_url # xxx fix this, should be an array
-
-            
-            
-            # update the results object with the dataset urls
-            m_objects.update_one({"object_id": agent_object_id},
-                                 {"$set": {
-                                     "parameters": obj["parameters"]
-                                 }})
-            logger.info(msg=f'{function_name} agent results object updated with parameter object that includes dataset urls')
+            dataset_obj = entry[0]
+            logger.info(msg=f'{function_name} found one; file_host_url = {dataset_obj["file_host_url"]}, for expression file={dataset_obj["loaded_file_objects"][file_type]}')
+            assert _mongo_count(m_objects, {"object_id": obj["parameters"]["dataset"]}) == 1
+            # assert that the requested dataset data_type and files matche tool's inputDatasetType parameters of the requested tool
+            required_in_file_types=_get_service_value(obj["parameters"]["service_id"], "inputDatasetType", "file_types")
+            for file_type in required_in_file_types:
+                assert file_type in dataset_obj["loaded_file_objects"]
         except Exception as e:
-            raise logger.error(msg="! {function_name} Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({ToolParameters}) message=[{e}] ! traceback={traceback.format_exc()}")
+            raise logger.error(msg='! {function_name} Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
 
         logger.info(msg=f'{function_name} params={json.dumps(obj["parameters"])}')
-
-        # 2. post the files required by the analysis to the analysis endpoint
-        # xxx take out this hard-coding - synch-up field names between too-pca and ToolParameters
+        
+        # 2. post the dataset to the analysis endpoint ##################################################################################
         headers = {
-            'accept': 'application/json'
+            'accept': _get_service_value(obj["parameters"]["service_id"], "outputResultsType", "mime_type")
         }
-        params = {
-            "submitter_id": obj["parameters"]["submitter_id"],
-            "number_of_components": 3,
-            "gene_expression_url": dataset_file_url
-        }
-        logger.info(msg=f'{function_name} params(hardcoded)={json.dumps(params)}')
-        analysis_host_submit_url=f'{tool_host_url}/submit'
-        logger.info(msg=f"{function_name} submit_url={analysis_host_submit_url}")
-        analysis_response = requests.post(analysis_host_submit_url, params=params, headers=headers) # xxx
+        for file_type in required_in_file_types:
+            obj["parameters"]["expression_url"] = _getfile_url
+        tool_host_url = _get_url(obj["parameters"]["service_id"]),
+        logger.info(msg=f"{function_name} submit_url={tool_host_url}/submit")
+        analysis_response = requests.post(f'{tool_host_url}/submit', params=obj["parameters"], headers=headers) # xxx
         logger.info(msg=f'{function_name} analysis_response.status_code={analysis_response.status_code}')
         assert analysis_response.status_code == 200
 
-        # 3. store the results object in the results service
+        # 3. store the results object in the results service ##################################################################
+        # save results to /tmp
         results = analysis_response.content
         results_file_path = f'/tmp/{agent_object_id}' # xxx maybe replace this with: {'client_file': open(io.StringIO(str(response.content,'utf-8')), 'rb')}
         with open(results_file_path, 'wb') as s:
             s.write(results) # xxx make this a zipped file
         logger.info(msg=f'{function_name} wrote response to /tmp/{agent_object_id}')
-        file_data = {'client_file': open(results_file_path, 'rb')} # xxx make this a zipped file
+        # create results upload args
+        files = {'client_file': (f'results-{agent_object_id}', open(results_file_path, 'rb')) } # xxx make this a zipped file
         headers = {
             'accept': 'application/json',
             'Content-Type': 'multipart/form-data',
         }
-        # xxx add in requested object id here
-        params = { # xxx add in requested id
+        params = {
             "submitter_id": obj["parameters"]["submitter_id"],
             #"data_type": obj["parameters"]["result_type"],
-            "data_type": "results-PCATable",# xxx fix this hardcode
+            "data_type": "class_results_PCATable",# xxx fix this hardcode
             "version": "1.0"
         }
         logger.info(msg=f'{function_name} params={params}')
-        files = {'client_file': (f'results-{agent_object_id}', open(results_file_path, 'rb')) } # xxx make this a zipped file
+        # build results upload url
         results_provider_host_url = _get_url(obj["parameters"]["results_provider_service_id"],"service_url","results-provider-services")
         logger.info(msg=f'{function_name} results provider host_url={results_provider_host_url}')
+        # call upload provider
         store_response = requests.post(f"{results_provider_host_url}/submit", params=params, files=files)
         logger.info(msg=f'{function_name} object added to results server, status code=({store_response.status_code})')
+        # read the respones
         store_obj = store_response.json()
         logger.info(msg=f'{function_name} response = ({store_obj})')
         assert store_response.status_code == 200
         # xxx if the results file is a zip, add 'loaded files' meta data about the files here
+        # unlink the /tmp file(s)
         os.unlink(results_file_path)
+        # update the agent object to include the results object id
         logger.info(msg=f'{function_name} object_id={store_obj["object_id"]}')
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
                                  "results_provider_host_url": results_provider_host_url, # xxx remove this everywhere
-                                 "loaded_file_objects": {"filetype-results-PCATable": store_obj["object_id"]}, # xxxfix this
+                                 "loaded_file_objects": {"filetype_results_PCATable": store_obj["object_id"]}, # xxxfix this
                                  "agent_status": "finished" # maybe add detail? xxx
                              }})
         # xxx need to fix the /files endpoint to return url to the single resutls file
@@ -1180,25 +1180,9 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
         logger.error(msg=f'{function_name} ! updated object {agent_object_id} to failed.')
 
 @app.post("/analyze", summary="submit an analysis", tags=["Post","Service","Tool Service"])
-async def analyze(#service_id: str,
-                  #submitter_id: str,
-                  #number_of_components: int,
-                  #dataset: str,
-                  parameters: ToolParameters = Depends(ToolParameters.as_form),
+async def analyze(parameters: ToolParameters = Depends(ToolParameters.as_form),
                   requested_results_object_id: Optional[str] =  Query(None, title="Request an object id for the results, not guaranteed. mainly for testing")):
     '''
-    example:
-    parameters = 
-    {
-      "service_id": "fuse-tool-pca", 
-      "submitter_id": "submitter@email.com",
-      "result_type": "result-type-pcaTable",
-      "args":     { 
-                      "number_of_components": 3 
-                  },
-      "dataset": "provider_dataset_object_id"                  
-     }
-    returns results_id
 from slack:
 When an analysis is submitted to an agent, the agent will:
 Create a "results"-type object_id in it's database, containing status="started" and the link to where you can get the object when its finished
@@ -1208,17 +1192,8 @@ return the object_id
 3. When the dashboard asks for the object, the agent returns the meta data
 4. If the meta data shows status = finished, the dashboard uses the link in the meta data to retrieve the results. (edited) 
     '''
+    function_name="[analyze]"
     try:
-        function_name="[analyze]"
-        # xxx
-        '''
-        parameters={}
-        parameters["service_id"] = service_id
-        parameters["submitter_id"] = submitter_id
-        parameters["number_of_components"]=number_of_components
-        parameters["dataset"] = dataset
-        '''
-        # xxx
         detail_str = ""
         dataset_object_id = None
         requested_object_id = requested_results_object_id
@@ -1229,8 +1204,6 @@ return the object_id
         logger.info(f"{function_name} checking that dataset {dataset_object_id} for analysis are legit")
         assert  _mongo_count(mongo_objects, {"object_id": dataset_object_id}) == 1
         
-        ###########
-        # xxx This code is common with /load, break it out:
         # add submitter
         logger.info(msg=f"{function_name} getting id")
         agent_object_id = _gen_object_id("agent", parameters.submitter_id, requested_object_id, mongo_objects)
@@ -1246,24 +1219,18 @@ return the object_id
             
             "service_host_url": None, # url to tool, derived from params
             "file_host_url": None, # url to the results data server (dataset urls are in the parameters
-
-            #"service_object_id": None, # id created on provider for this resultset; track here so you can delete remotely cached object if this object is deleted on agent
-            "loaded_file_objects": {}, # e.g., "filetype-results-PCATable": "..."
+            "loaded_file_objects": {}, # e.g., "filetype_results_PCATable": "..."
             "num_files_requested": 0
         }
         logger.info(msg=f"{function_name} inserting agent-side agent_object={agent_object}")
         _mongo_insert(mongo_objects, agent_object)
         logger.info(msg=f"{function_name} created agent object: object_id:{agent_object_id}, submitter_id:{parameters.submitter_id}")
-        # END
-        #####
         
-        ###########
-        # xxx This code is common with /load, break it out:
         # enqueue the job
         job_id = str(uuid.uuid4())
         logger.info(msg=f"{function_name} submitter={parameters.submitter_id}, to service_id={parameters.service_id}, timeout_seconds={timeout_seconds}, job_id={job_id}")
         g_queue.enqueue(_remote_analyze_object,
-                        args=(agent_object_id, parameters, "filetype-dataset-expression"),# fix filetype xxx
+                        args=(agent_object_id),
                         timeout=timeout_seconds,
                         job_id=job_id,
                         result_ttl=-1)
@@ -1277,8 +1244,6 @@ return the object_id
         p_worker = Process(target=_initWorker)
         p_worker.start()
         # xxx should this be p_worker.work()?
-        # END
-        #####
         
         return {
             "object_id": agent_object_id,
