@@ -695,18 +695,22 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         logger.info(msg=f"[post_object] submitter={parameters.submitter_id}, to service_id={parameters.service_id}, requesting {num_files_requested} files, timeout_seconds={timeout_seconds}")
         # stream any file(s) onto the fuse-agent server, named on fuse-agent from the client file name
         # xxx replace this with a ProviderObject model instance
-        provider_object = {
+        agent_object = {
             "object_id": agent_object_id,
             "created_time": datetime.utcnow(),
             "parameters": parameters.dict(), # xxx?
             "agent_status": None,
             "detail": None,
-            "service_object_id": None,
-            "loaded_file_objects": {},
+            
+            "service_host_url": None, # url to provider, derived from params xxx - set this in callback
+            "file_host_url": None, # url to the results data server (dataset urls are in the parameters  xxx - set this in callback
+            
+            # "service_object_id": None, # id created on provider for this upload
+            "loaded_file_objects": {}, # e.g., "filetype-dataset-expression": "upload_<email>_<remote_object_id>", ...
             "num_files_requested": num_files_requested
         }
-        logger.info(msg=f"[post_object] inserting agent-side provider_object={provider_object}")
-        _mongo_insert(mongo_objects, provider_object)
+        logger.info(msg=f"[post_object] inserting agent-side object for provider={agent_object}")
+        _mongo_insert(mongo_objects, agent_object)
         logger.info(msg=f"[post_object] created provider object: object_id:{agent_object_id}, submitter_id:{parameters.submitter_id}")
         # END
         #####
@@ -841,87 +845,109 @@ async def get_url(object_id: str, file_type: str):
         raise HTTPException(status_code=500,
                             detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         
-
-
-def _remote_delete_object(agent_object_id:str):
+def _agent_delete_object(agent_object_id:str):
+    ''' 
+    Deletes agent object off local store; does NOT follow metadata to delete remote object.
+    WARNING: call _remote_delete_object first in order to avoid orphaning cached objects that have been requested remotely
+    returns:
+       - array [info, stderr, status]: status can be one of "started", "deleted", "exception"
+    '''
+    function_name = "[_agent_delete_object]"
     delete_status = "started"
-    ret_mongo=""
-    ret_mongo_err=""
+    info_msg=""
+    stderr_msg=""
     try:
-        ####
-        # FIRST request delete on remote server
-
+        # Request delete on remote server
         # because this may run out-of-band, I think we might need a new mongodb connection?
-        logger.info(msg=f"[_remote_delete_object] connecting to {g_mongo_client_str} anew")
-        my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
-        my_mongo_db = my_mongo_client.test
-        m_objects=my_mongo_db.objects
-        
-        logger.info(msg=f"[_remote_delete_object] looking up {agent_object_id}")
-        entry = m_objects.find({"object_id":agent_object_id},{"_id":0})
-        assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
-        obj = entry[0]
-        service_object_id = obj["service_object_id"] # set this early in case there's an exception
-        host_url = _get_url(obj["parameters"]["service_id"])
-        delete_url=f"{host_url}/delete/{service_object_id}"
-        logger.info(msg=f"[_remote_delete_object] delete remote object with {delete_url}")
-        response = requests.delete(delete_url)
-        #  ^^^^ everything to here works.
-        assert response.status_code == 200 or response.status_code == 404
-        
-        ####
-        # IF THAT WORKS delete object on agent:
-        if response.status_code == 404:
-            logger.warn(msg=f"[_remote_delete_object] Remote object {service_object_id} not found with {delete_url} when deleting {agent_object_id}")
-            # xxx may want to add this to an audit report for admin or something
-            
-        logger.warn(msg=f"[_remote_delete_object] Deleting agent agent_object_id: {agent_object_id}")
-        ret = m_objects.delete_one({"object_id": agent_object_id})
+        logger.warn(msg=f"{function_name} Deleting agent agent_object_id: {agent_object_id}")
+        ret = mongo_objects.delete_one({"object_id": agent_object_id})
         #<class 'pymongo.results.DeleteResult'>
         delete_status = "deleted"
         if ret.acknowledged != True:
             delete_status = "failed"
-            ret_mongo += "ret.acknoledged not True."
-            info += f"Object not found on provider."
-            logger.error(msg=f"[_remote_delete_object] agent delete failed, ret.acknowledged ! = True")
+            info_msg += f"! Object not found on agent.\n{info_msg}"
+            logger.error(msg=f"{function_name} agent delete failed, ret.acknowledged ! = True")
         if ret.deleted_count != 1:
             # should never happen if index was created for this field
             delete_status = "failed"
-            ret_mongo += f"Wrong number of records deleted ({ret.deleted_count})."
-            info += f"Wrong number of provider records deleted ({ret.deleted_count})."
-            logger.error(msg=f"[_remote_delete_object] delete failed, wrong number deleted, count[1]={ret.deleted_count}")
+            info_msg += f"! Wrong number of records deleted from agent ({ret.deleted_count}).\n{info_msg}"
+            logger.error(msg=f"{function_name} delete failed, wrong number deleted, count[1]={ret.deleted_count}")
 
-        ret_mongo += f"Deleted agent objects, count=({ret.deleted_count}), Acknowledged=({ret.acknowledged})."
+        info_msg = f"{info_msg} Deleted agent objects, count=({ret.deleted_count}), Acknowledged=({ret.acknowledged})."
     except Exception as e:
-        logger.error(msg=f"[_remote_delete_object] Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}]  ! traceback={traceback.format_exc()}")
-        ret_mongo_err += f"! Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}] ! traceback={traceback.format_exc()}"
-        info = f"Somthing went wrong with delete. {info}"
+        logger.error(msg=f"{function_name} Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}]  ! traceback={traceback.format_exc()}")
+        stderr_msg += f"! Exception {type(e)} occurred while deleting agent {agent_object_id} from database, message=[{e}] ! traceback={traceback.format_exc()}"
+        info_msg = f"! Somthing went wrong with local database delete.\n{info_msg}"
         delete_status = "exception"
         
-    # If data are cached on a mounted filesystem, unlink that too if it's there
-    logger.info(msg=f"[_remote_delete_object] Deleting agent {agent_object_id} from file system")
-    ret_os=""
-    ret_os_err=""
     try:
-        # xxx this isn't working, remove file first?
+        logger.info(msg=f"{function_name} Deleting cached files from agent {agent_object_id} off file system")
         local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         local_path = os.path.join(local_path, f"{agent_object_id}-data")
-        logger.info(msg=f"[_remote_delete_object] removing tree ({local_path})")
+        logger.info(msg=f"{function_name} removing tree ({local_path})")
         shutil.rmtree(local_path,ignore_errors=False)
     except Exception as e:
-        logger.warn(msg=f"[_remote_delete_object] Exception {type(e)} occurred while deleting agent {agent_object_id} from filesystem")
-        ret_os_err += f"? Exception {type(e)} occurred while deleting agent object from filesystem, message=[{e}] ! traceback={traceback.format_exc()}"
+        logger.warn(msg=f"{function_name} Exception {type(e)} occurred while deleting agent {agent_object_id} from filesystem")
+        stderr_msg += f"? Exception {type(e)} occurred while deleting agent object from filesystem, message=[{e}] ! traceback={traceback.format_exc()}"
 
-    return {
-        "status": delete_status,
-        "info": f"{ret_mongo} {ret_os}",
-        "stderr": f"{ret_mongo_err} {ret_os_err}"
-    }
+    return [ info_msg, stderr_msg, delete_status]
 
-    
+def _remote_delete_object(agent_object_id:str):
+    ''' 
+    Deletes follows agent object id metadata to find and delete remote object. Does NOT delete agent object.
+    WARNING: call _agent_delete_object after this call to avoid dangling references.
+    returns array [info, stderr, status]
+    status can be one of "started", "deleted", "not found", "failed"
+    '''
+    function_name="[_remote_delete_object]"
+    delete_status = "started"
+    info_msg = ''
+    stderr_msg=''
+    try:
+        # Request delete on remote server
+        logger.info(msg=f"{function_name} connecting to {g_mongo_client_str} anew")
+        '''
+        # because this may run out-of-band, I think we might need a new mongodb connection?
+        my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
+        my_mongo_db = my_mongo_client.test
+        m_objects=my_mongo_db.objects
+        # xxx close this connection?
+        '''
+        
+        logger.info(msg=f"{function_name} looking up {agent_object_id}")
+        entry = mongo_objects.find({"object_id":agent_object_id},{"_id":0})
+        assert _mongo_count(mongo_objects, {"object_id":agent_object_id}) == 1
+        obj = entry[0]
+
+        for file_type in obj["loaded_file_objects"]:
+            service_object_id = obj["loaded_file_objects"][file_type]
+            #service_object_id = obj["service_object_id"] # set this early in case there's an exception
+            host_url = _get_url(obj["parameters"]["service_id"])
+            delete_url=f"{host_url}/delete/{service_object_id}"
+            logger.info(msg=f"{function_name} delete remote object with {delete_url}")
+            response = requests.delete(delete_url)
+            assert response.status_code == 200 or response.status_code == 404
+            delete_status = "deleted"
+            if response.status_code == 404:
+                info_msg += "* Remote object not found when deleting {agent_object_id}"
+                logger.warn(msg=f"{function_name} * Remote object {service_object_id} not found with {delete_url} when deleting {agent_object_id}")
+                delete_status = "not found"
+                # xxx may want to add this to an audit report for admin or something
+
+    except Exception as e:
+        logger.warn(msg=f"{function_name} Exception {type(e)} occurred while deleting {agent_object_id}")
+        stderr_msg += f'? Exception {type(e)} occurred while deleting agent objec {agent_object_id} message=[{e}] ! traceback={traceback.format_exc()}'
+        delete_status = "failed"
+
+    ret_obj = [info_msg, stderr_msg, delete_status]        
+    logger.info(msg=f"{function_name} returning {ret_obj}")
+    return ret_obj
+
+
 # xxx connect this to delete associated analyses if object is dataset?
 @app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.", tags=["Delete","Service","Data Provider Service","Tool Service"])
-async def delete(object_id: str):
+async def delete(object_id: str,
+                 force: bool = False):
     '''
     Delete cached data from the remote provider, identified by the provided object_id.
     <br>**WARNING**: This will orphan associated analyses; only delete downloads if:
@@ -936,22 +962,56 @@ async def delete(object_id: str):
     - status = 'exception' if an exception is encountered while removing the object from the database or filesystem, regardless of whether or not the object was successfully deleted, see other returned fields for more information.
     - status = 'failed' if 0 or greater than 1 object is not found in database.
     '''
+    function_name = "[delete]"
+    
+    delete_status="started"
+    # concatenate these as you go so they can be reported out in the event of an exception
     info=""
-    delete_status=""
     stderr=""
     try:
-        # may want to enqueue, but for now just call it directly
-        logger.info(msg=f"[delete] deleting {object_id}")
-        ret = _remote_delete_object(object_id)
-        logger.info(msg=f"[delete] returned ({ret})")
-        info=ret["info"]
-        delete_status=ret["status"]
-        stderr=ret["stderr"]
+        logger.info(msg=f"{function_name} deleting {object_id}")
+
+        # delete object off provider
+        remote_status=""
+        try:
+            logger.info(msg=f"{function_name} deleting {object_id} off remote service")
+            # xxx may want to enqueue, but for now just call it directly
+            # concatenate result to info, stderr
+            [info, stderr, remote_status] = [ orig + " " + new for orig, new in zip([info, stderr, ''], _remote_delete_object(object_id)) ]
+            remote_status = remote_status.lstrip()
+        except Exception as e:
+            logger.warn(msg=f"{function_name} ! exception while attempting to delete {object_id} off remote service")
+            stderr += f'? Exception {type(e)} occurred while deleting provider object {object_id} message=[{e}] ! traceback={traceback.format_exc()}'
+
+        # delete local object
+        agent_status = ""
+        try:
+            if (remote_status == "deleted" or remote_status == "not found" or force):
+                logger.info(msg=f"{function_name} deleting agent object={object_id}")
+                # concatenate result to info, stderr
+                [info, stderr, agent_status] = [ orig + " " + new for orig, new in zip([info, stderr, ''], _agent_delete_object(object_id)) ]
+                delete_status = agent_status.lstrip()
+            else:
+                delete_status = remote_status
+                logger.info(msg=f"{function_name} problem deleting object={object_id} on provider, status={remote_status}, info={info}, stderr={stderr}")
+        except Exception as e:
+            logger.error(msg=f"{function_name} ! exception while attempting to delete {object_id} off local service")
+            stderr += f'? Exception {type(e)} occurred while deleting agent object {object_id} message=[{e}] ! traceback={traceback.format_exc()}'
+            delete_status = "failed"
+
+        ret= {
+            "status": delete_status,
+            "info": info,
+            "stderr": stderr
+        }
+        logger.info(msg=f"{function_name} returning=({ret})")
+        
         assert delete_status == "deleted"
         return ret
+    
     except Exception as e:
         detail_str = f'! Message=[{info}] Error while deleting ({object_id}), status=[{delete_status}] stderr=[{stderr}]'
-        logger.error(msg=f"[delete] Exception {type(e)} occurred while deleting agent {object_id} from filesystem. detail_str={detail_str}")
+        logger.error(msg=f"{function_name} Exception {type(e)} occurred while deleting agent {object_id} from filesystem. detail_str={detail_str}")
         raise HTTPException(status_code=404,
                             detail=detail_str)
 
@@ -993,6 +1053,7 @@ async def _remote_analyze_object(agent_object_id:str, parameters:ToolParameters,
     function_name = "[_remote_analyze_object]"
     try:
         logger.info(msg=f"{function_name} ({file_type}) connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}")
+        # xxx take this out?:
         my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
         my_mongo_db = my_mongo_client.test
         m_objects=my_mongo_db.objects
@@ -1180,10 +1241,15 @@ return the object_id
             "object_id": agent_object_id,
             "created_time": datetime.utcnow(),
             "parameters": parameters.dict(), # parameters used for creating the results xxx works?
-            "service_host_url": None, # url to tool 
-            "file_host_url": None, # url to the results data server (dataset urls are in the parameters
             "agent_status": None, # status of the analyses
-            "detail": None # any error messages
+            "detail": None, # any error messages
+            
+            "service_host_url": None, # url to tool, derived from params
+            "file_host_url": None, # url to the results data server (dataset urls are in the parameters
+
+            #"service_object_id": None, # id created on provider for this resultset; track here so you can delete remotely cached object if this object is deleted on agent
+            "loaded_file_objects": {}, # e.g., "filetype-results-PCATable": "..."
+            "num_files_requested": 0
         }
         logger.info(msg=f"{function_name} inserting agent-side agent_object={agent_object}")
         _mongo_insert(mongo_objects, agent_object)

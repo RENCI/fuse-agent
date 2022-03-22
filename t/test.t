@@ -27,7 +27,8 @@ use Support;
 our $verbose = 0;
 our $dry_run = 0;
 
-our $OBJID="test_object_id";
+our $DATASET_OBJID="test_dataset_object_id";
+our $RESULT_OBJID="test_result_object_id";
 our $SUBMITTER_ID='test-xxx@email.com';
 
 # read the .env file
@@ -76,35 +77,35 @@ files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),    
 
 my $service_id="fuse-provider-upload";
 $fn = "provider-1.json";
-files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${OBJID}",
+files_eq(f($fn), cmd("POST", $fn, "objects/load?requested_object_id=${DATASET_OBJID}",
 		     "-F service_id=${service_id} " .
 		     "-F submitter_id=${SUBMITTER_ID} " .
 		     "-F data_type=dataset-geneExpression " .
 		     "-F version=1.0 " .
-		     "-F 'optional_file_samplePropertiesMatrix=@./t/input/phenotypes.csv;type=application/csv' " .
+		     "-F 'optional_file_expressionMatrix=@./t/input/expression.csv;type=application/csv' " .
 		     "-H 'Content-Type: multipart/form-data' -H 'accept: application/json'"),
 	                                                                                                   "($fn) Submit csv file");
 sleep(1); # wait for job queue to catch up
 
 # currently, there is no nested value generalizer so the following is just a smoke-test that an object is found.
 $fn = "provider-2.json";
-generalize_output($fn, cmd("GET", rawf($fn), "objects/{$OBJID}"), ["agent","provider"]);
+generalize_output($fn, cmd("GET", rawf($fn), "objects/{$DATASET_OBJID}"), ["agent","provider"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get info about csv DRS object");
 
 # currently, there is no way to parse the object out of the url so this is just a smoke-test
 $fn = "provider-2b.json";
-generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$OBJID}/type/filetype-dataset-properties"), ["url"]);
-files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get URL for object's file");
+generalize_output($fn, cmd("GET", rawf($fn), "objects/url/{$DATASET_OBJID}/type/filetype-dataset-expression"), ["url"]);
+files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Get URL for dataset object's file");
 
 $fn = "provider-2c.json";
 files_eq(f($fn), cmd("GET",    $fn, "objects/search/${SUBMITTER_ID}"),                                     "Get list of objects created by the submitter");
 
 $fn = "provider-3.json";
-generalize_output($fn, cmd("DELETE", rawf($fn), "delete/{$OBJID}"), ["stderr"]);
+generalize_output($fn, cmd("DELETE", rawf($fn), "delete/{$DATASET_OBJID}"), ["stderr"]);
 files_eq(f($fn), "t/out/${fn}",                                                                            "($fn) Delete the csv object");
 
 $fn = "provider-4.json";
-files_eq(f($fn), cmd("DELETE", $fn, "delete/${OBJID}"),                                                    "($fn) Delete the csv object (not found)");
+files_eq(f($fn), cmd("DELETE", $fn, "delete/${DATASET_OBJID}"),                                            "($fn) Delete the csv object (not found)");
 
 $fn = "provider-5.json";
-files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                                 "Delete submitter created by post");
+files_eq(f($fn), cmd("DELETE",    $fn, "submitters/delete/${SUBMITTER_ID}"),                               "Delete submitter created by post");
