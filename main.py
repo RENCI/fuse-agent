@@ -807,7 +807,7 @@ async def get_objects(submitter_id: str = Query(default=None, description="uniqu
         return ret
     except Exception as e:
         raise HTTPException(status_code=500,
-                            detail="! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
+                            detail=f"! Exception {type(e)} occurred while retrieving object_ids for submitter=({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
 
 # xxx is this unecessary? can we just get the url from the provider at time of submission, cache it, and ignore the drs?
@@ -939,7 +939,7 @@ def _remote_delete_object(agent_object_id:str):
         num_deleted = 0
         for file_type in obj["loaded_file_objects"]:
             info_msg = f'{info_msg}Deleting object file_type={file_type}. '
-            service_object_id = obj["loaded_file_objects"][file_type]
+            service_object_id = obj["loaded_file_objects"][file_type]["object_id"]
             #service_object_id = obj["service_object_id"] # set this early in case there's an exception
             host_url = _get_url(obj["parameters"]["service_id"])
             delete_url=f"{host_url}/delete/{service_object_id}"
