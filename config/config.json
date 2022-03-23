@@ -14,6 +14,18 @@
     }
   },
   "configuredServices": {
+    "fuse-provider-immunespace": {
+      "title": "FUSE Provider Immunespace",
+      "__comment1__":"Use the following if running fuse-agent on a docker network",
+      "container-network": "fuse",
+      "container_URL": "http://fuse-provider-immunespace:8085",
+      "__comment2__":"Use the following if running fuse-agent as a stand-alone app",
+      "host_name": "localhost",
+      "host_port": "8085",
+      "__comment3__":"Use the following for file server",
+      "file_host_name": "localhost",
+      "file_host_port": "8085"
+    },
     "fuse-provider-upload": {
       "title": "Custom data",
       "__comment1__":"Use the following if running fuse-agent on a docker network",
