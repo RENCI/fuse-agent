@@ -623,6 +623,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         if response.status_code == 200:        
             provider_object = response.json()
             #logger.info(msg=f"{function_name} ({file_type}) response={json.dumps(provider_object, indent=4)}")
+            # xxx warning: if two threads are updating the same loaded_file_objects json object at once, only one file_type will be set. 
             obj["loaded_file_objects"][file_type] = {}
             logger.info(msg=f'{function_name} Setting loaded_file_objects for {file_type} on {agent_object_id}')
             obj["loaded_file_objects"][file_type]["object_id"] = provider_object["object_id"]
@@ -631,7 +632,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             logger.info(msg=f'{function_name}({file_type}) {provider_object["object_id"]}; loaded_file_objects={obj["loaded_file_objects"]}')
             m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
-                                     "loaded_file_objects": obj["loaded_file_objects"],
+                                     "loaded_file_objects": obj["loaded_file_objects"]
                                  }})
         else:
             detail_str = f'status_code={response.status_code}, response={response.text}'
@@ -642,7 +643,6 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                          "detail": f'{function_name}: {detail_str}'
                                      }})            
 
-        # unlink directory after all files have been processed
         logger.info(msg=f"{function_name} ({file_type}) object {agent_object_id} successfully created.")
         try:
             # check if another thread made an update:
@@ -651,13 +651,17 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             obj = entry[0]
             logger.info(msg=f'{function_name} len(obj["loaded_file_objects"]=({len(obj["loaded_file_objects"])}), ({file_type}) obj={obj}')
             if len(obj["loaded_file_objects"]) == obj["num_files_requested"]:
-                logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
-                os.rmdir(agent_file_dir)
                 m_objects.update_one({"object_id": agent_object_id},
                                      {"$set": {
                                          "agent_status": "finished"
                                      }})
                 logger.info(msg=f"{function_name} ({file_type}) ({agent_object_id}) agent_status = finished")
+                
+            if(provider_params["accession_id"] == None):
+                # unlink directory after all files have been processed
+                logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
+                os.rmdir(agent_file_dir)
+                
         except Exception as e:
             logger.error(msg=f'{function_name} ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
@@ -753,6 +757,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             
         for file_type in client_file_dict.keys():
             logger.info(msg=f"[post_object] top of loop, file_type= {file_type}") # ok so far
+
             client_file_obj = client_file_dict[file_type]
             agent_file_path = ""
             if client_file_obj is not None:
@@ -763,14 +768,9 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                     with open(agent_file_path, 'wb') as out_file:
                         contents = client_file_obj.file.read()
                         out_file.write(contents)
-                    import time
-                    logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions")
-                    time.sleep(3)
                 else:
                     logger.info(msg=f"[post_object] accession_id provided, so no files uploaded for file_type={file_type}")
                     
-                ###########
-                # xxx This code is common with /load, break it out:
                 # enqueue the job
                 job_id = str(uuid.uuid4())
                 # xxx maybe add to loaded_file_objects a status code and job_id?
@@ -788,8 +788,11 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 p_worker = Process(target=_initWorker)
                 p_worker.start()
                 # xxx should this be p_worker.work()?
-                # END
-                #####
+                
+            import time
+            logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions inside _remote_submit_file")
+            time.sleep(3)
+
         
         return {
             "object_id": agent_object_id,
