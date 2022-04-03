@@ -562,9 +562,9 @@ def _set_agent_status(accession_id, service_object_id, num_files_requested, num_
 
     
 # @job('low', connection=g_redis_connection, timeout=g_redis_default_timeout)
-async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_path:str):
+async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_path:str, job_id:str):
     try:
-        function_name="[_remote_submit_file]"
+        function_name="[_remote_submit_file:{job_id}]"
         # because this runs out-of-band, or maybe the async is doing it, I think we might need a new mongodb connection?
         logger.info(msg=f"{function_name} ({file_type}) connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} file_type:{file_type}, agent_file_path:{agent_file_path} ")
         my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
@@ -588,7 +588,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                  }})
         provider_params = obj["parameters"]
         provider_params["file_type"] = file_type
-        logger.info(msg=f"provider_params={json.dumps(provider_params)}")
+        logger.info(msg=f"{function_name} provider_params={json.dumps(provider_params)}")
         provider_headers = {
             'accept': 'application/json',
             'Content-Type': 'multipart/form-data',
@@ -622,17 +622,18 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
         # if successful, update agent object with status and provider object id
         if response.status_code == 200:        
             provider_object = response.json()
+            logger.info(msg=f'{function_name} PROVIDER RESPONSE=({file_type}) {provider_object}')
             #logger.info(msg=f"{function_name} ({file_type}) response={json.dumps(provider_object, indent=4)}")
             # xxx warning: if two threads are updating the same loaded_file_objects json object at once, only one file_type will be set. 
-            obj["loaded_file_objects"][file_type] = {}
             logger.info(msg=f'{function_name} Setting loaded_file_objects for {file_type} on {agent_object_id}')
-            obj["loaded_file_objects"][file_type]["object_id"] = provider_object["object_id"]
-            obj["loaded_file_objects"][file_type]["service_host_url"] = _get_url(obj["parameters"]["service_id"])
-            obj["loaded_file_objects"][file_type]["file_host_url"] = _get_url(obj["parameters"]["service_id"], "file_url")
+            loaded_file_object = {}
+            loaded_file_object["object_id"] = provider_object["object_id"]
+            loaded_file_object["service_host_url"] = _get_url(obj["parameters"]["service_id"])
+            loaded_file_object["file_host_url"] = _get_url(obj["parameters"]["service_id"], "file_url")
             logger.info(msg=f'{function_name}({file_type}) {provider_object["object_id"]}; loaded_file_objects={obj["loaded_file_objects"]}')
             m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
-                                     "loaded_file_objects": obj["loaded_file_objects"]
+                                     f'loaded_file_objects.{file_type}': loaded_file_object
                                  }})
         else:
             detail_str = f'status_code={response.status_code}, response={response.text}'
@@ -657,10 +658,10 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                      }})
                 logger.info(msg=f"{function_name} ({file_type}) ({agent_object_id}) agent_status = finished")
                 
-            if(provider_params["accession_id"] == None):
-                # unlink directory after all files have been processed
-                logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
-                os.rmdir(agent_file_dir)
+                if(provider_params["accession_id"] == None):
+                    # unlink directory after all files have been processed
+                    logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
+                    os.rmdir(agent_file_dir)
                 
         except Exception as e:
             logger.error(msg=f'{function_name} ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
@@ -776,7 +777,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 # xxx maybe add to loaded_file_objects a status code and job_id?
                 logger.info(msg=f"[post_object] QUEUE: agent_object_id:{agent_object_id}, file_type:{file_type}, agent_file_path:{agent_file_path},job_id=:{job_id}") # ok so far
                 g_queue.enqueue(_remote_submit_file,
-                                args=(agent_object_id, file_type, agent_file_path),
+                                args=(agent_object_id, file_type, agent_file_path, job_id),
                                 timeout=timeout_seconds,
                                 job_id=job_id,
                                 result_ttl=-1)
@@ -791,7 +792,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 
             import time
             logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions inside _remote_submit_file")
-            time.sleep(3)
+            time.sleep(1)
 
         
         return {

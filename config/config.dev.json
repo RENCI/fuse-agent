@@ -5,21 +5,31 @@
       "title": "Results",
       "description": "Use this server for storing and retrieving results",
       "service_url": "http://fuse-provider-upload:8000",
-      "file_url": "http://localhost:8083"
+      "file_url": "http://localhost:8083",
+      "container_url": "http://fuse-provider-upload:8000"
     }
   },
   "configured-services": {
+    "fuse-provider-immunespace": {
+      "title": "Datasets",
+      "description": "For retrieving datasets from immunespace",
+      "service_url": "http://fuse-provider-immunespace:8085",
+      "file_url": "http://localhost:8085",
+      "container_url": "http://fuse-provider-immunespace:8085"
+    },
     "fuse-provider-upload": {
       "title": "Datasets",
       "description": "For uploading datasets for analysis",
       "service_url": "http://fuse-provider-upload:8000",
-      "file_url": "http://localhost:8083"
+      "file_url": "http://localhost:8083",
+      "container_url": "http://fuse-provider-upload:8000"
     },
     "fuse-tool-pca": {
       "title": "Principal Components Analyzer",
       "description": "Create a table with the given amount principal components",
       "service_url": "http://fuse-tool-pca:8000",
-      "file_url": "http://localhost:8086"
+      "file_url": "http://localhost:8086",
+      "container_url": "http://fuse-tool-pca:8000"
     }
   }
 }
