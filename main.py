@@ -586,32 +586,39 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
                                      "file_host_url": _get_url(obj["parameters"]["service_id"], "file_url"),
                                      "agent_status": "started"
                                  }})
-        # post file data to provider
-        logger.info(msg=f'{function_name} ({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
-        (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
-        logger.info(msg=f"{function_name} ({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
-        file_data = {'client_file': open(agent_file_path, 'rb')}
-        headers = {
-            'accept': 'application/json',
-            'Content-Type': 'multipart/form-data',
-        }
-        '''
-        params = {
-            "submitter_id": obj["parameters"]["submitter_id"],
-            "data_type": obj["parameters"]["data_type"],
-            "file_type": file_type,
-            "version": "1.0"
-        }
-        '''
         provider_params = obj["parameters"]
         provider_params["file_type"] = file_type
         logger.info(msg=f"provider_params={json.dumps(provider_params)}")
-        files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
-        logger.info(msg=f'{function_name} ({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-        response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files)
-        # unlink tmp copy of the posted file
-        logger.info(msg=f"{function_name} ({file_type}) provider request complete for this file, removing file {agent_file_path}")
-        os.unlink(agent_file_path)
+        provider_headers = {
+            'accept': 'application/json',
+            'Content-Type': 'multipart/form-data',
+        }
+        if(provider_params["accession_id"] != None):
+            logger.info(msg=f'{function_name} ({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, headers=provider_headers)
+        else:
+            # post file data to provider
+            logger.info(msg=f'{function_name} ({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
+            (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
+            logger.info(msg=f"{function_name} ({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
+            file_data = {'client_file': open(agent_file_path, 'rb')}
+            files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
+            logger.info(msg=f'{function_name} ({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files)
+            # unlink tmp copy of the posted file
+            logger.info(msg=f"{function_name} ({file_type}) provider request complete for this file, removing file {agent_file_path}")
+            os.unlink(agent_file_path)
+
+
+        '''
+            params = {
+              "submitter_id": obj["parameters"]["submitter_id"],
+              "data_type": obj["parameters"]["data_type"],
+              "file_type": file_type,
+              "version": "1.0"
+            }
+        '''
+
         # if successful, update agent object with status and provider object id
         if response.status_code == 200:        
             provider_object = response.json()
@@ -688,6 +695,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             "filetype_dataset_expression": optional_file_expression,
             "filetype_dataset_properties": optional_file_properties
 
+    If specifying an accession_id, then also specify the filetype(s) to be retreived by providing non-empty strings for the upload files of the desired types. This functionality is temporary to accommodate a prototype and will be replaced later (see https://github.com/RENCI/fuse-agent/issues/5)
     '''
     logger.info(msg=f"[post_object] top")
     try:
@@ -744,18 +752,23 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             logger.info(msg=f"[post_object] calling service with accession id = {parameters.accession_id, parameters.apikey}")
             
         for file_type in client_file_dict.keys():
+            logger.info(msg=f"[post_object] top of loop, file_type= {file_type}") # ok so far
             client_file_obj = client_file_dict[file_type]
+            agent_file_path = ""
             if client_file_obj is not None:
                 client_file_name = client_file_obj.filename
                 logger.info(msg=f"[post_object] getting file = {client_file_name}, file_type= {file_type}") # ok so far
-                agent_file_path = os.path.join(agent_path, client_file_name)
-                with open(agent_file_path, 'wb') as out_file:
-                    contents = client_file_obj.file.read()
-                    out_file.write(contents)
-                import time
-                logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions")
-                time.sleep(3)
-                
+                if parameters.accession_id == None: # xxx this is kludgey, revist (see https://github.com/RENCI/fuse-agent/issues/5)
+                    agent_file_path = os.path.join(agent_path, client_file_name)
+                    with open(agent_file_path, 'wb') as out_file:
+                        contents = client_file_obj.file.read()
+                        out_file.write(contents)
+                    import time
+                    logger.info(msg=f"[post_object] sleep a sec to try and avoid racing conditions")
+                    time.sleep(3)
+                else:
+                    logger.info(msg=f"[post_object] accession_id provided, so no files uploaded for file_type={file_type}")
+                    
                 ###########
                 # xxx This code is common with /load, break it out:
                 # enqueue the job
