@@ -10,6 +10,13 @@
     }
   },
   "configured-services": {
+    "fuse-provider-immunespace": {
+      "title": "Datasets",
+      "description": "For uploading datasets for analysis",
+      "service_url": "http://localhost:8085",
+      "file_url": "http://localhost:8085",
+      "container_url": "http://fuse-provider-immunespace:8085"
+    },
     "fuse-provider-upload": {
       "title": "Datasets",
       "description": "For uploading datasets for analysis",

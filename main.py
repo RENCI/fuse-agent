@@ -595,16 +595,20 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             'accept': 'application/json',
             'Content-Type': 'multipart/form-data',
         }
+        '''
         params = {
             "submitter_id": obj["parameters"]["submitter_id"],
             "data_type": obj["parameters"]["data_type"],
             "file_type": file_type,
             "version": "1.0"
         }
-        logger.info(msg=f"params={json.dumps(params)}")
+        '''
+        provider_params = obj["parameters"]
+        provider_params["file_type"] = file_type
+        logger.info(msg=f"provider_params={json.dumps(provider_params)}")
         files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb')) }
         logger.info(msg=f'{function_name} ({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-        response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=params, files=files)
+        response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files)
         # unlink tmp copy of the posted file
         logger.info(msg=f"{function_name} ({file_type}) provider request complete for this file, removing file {agent_file_path}")
         os.unlink(agent_file_path)
@@ -638,7 +642,7 @@ async def _remote_submit_file(agent_object_id:str, file_type:str, agent_file_pat
             entry = m_objects.find({"object_id":agent_object_id}, {"_id":0})
             assert _mongo_count(m_objects, {"object_id":agent_object_id}) == 1
             obj = entry[0]
-            logger.info(msg=f'{function_name} ({file_type}) obj={obj}')
+            logger.info(msg=f'{function_name} len(obj["loaded_file_objects"]=({len(obj["loaded_file_objects"])}), ({file_type}) obj={obj}')
             if len(obj["loaded_file_objects"]) == obj["num_files_requested"]:
                 logger.info(msg=f"{function_name} ({file_type}) Removing directory {agent_file_dir}")
                 os.rmdir(agent_file_dir)
