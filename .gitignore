@@ -1,3 +1,6 @@
+# smoketest outputs
+out_*
+
 # database
 data/
 
