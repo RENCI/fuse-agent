@@ -880,8 +880,10 @@ async def get_url(object_id: str,
         logger.info(msg=f"[get_url] built url = ={obj_url}")
         return {"object_id": object_id, "url": obj_url}
     except Exception as e:
+        detail_str=f'! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}'
+        logger.error(msg=detail_str)
         raise HTTPException(status_code=500,
-                            detail=f"! Exception {type(e)} occurred while building url for ({object_id}), message=[{e}] ! traceback={traceback.format_exc()}")
+                            detail=detail_str)
         
 def _agent_delete_object(agent_object_id:str):
     ''' 
