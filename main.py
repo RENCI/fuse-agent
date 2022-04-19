@@ -511,8 +511,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
                     os.rmdir(agent_file_dir)
 
         except Exception as e:
-            logger.error(
-                msg=f'{function_name} ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
+            logger.error(f'({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
     except Exception as e:
         detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
@@ -1160,11 +1159,7 @@ return the object_id
         # enqueue the job
         job_id = str(uuid.uuid4())
         logger.info(f"submitter={parameters.submitter_id}, to service_id={parameters.service_id}, timeout_seconds={timeout_seconds}, job_id={job_id}")
-        g_queue.enqueue(_remote_analyze_object,
-                        args=(agent_object_id, parameters),
-                        timeout=timeout_seconds,
-                        job_id=job_id,
-                        result_ttl=-1)
+        g_queue.enqueue(_remote_analyze_object, args=(agent_object_id, parameters), timeout=timeout_seconds, job_id=job_id, result_ttl=-1)
         logger.info(f"Updating status")
         mongo_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
