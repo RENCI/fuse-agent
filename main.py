@@ -1,10 +1,9 @@
 import json
 import logging
 import os
-import pathlib
 import shutil
-import traceback
 import time
+import traceback
 import uuid
 from datetime import datetime, timedelta
 from logging.config import dictConfig
@@ -14,12 +13,11 @@ from typing import Optional
 import nest_asyncio
 import pymongo
 import requests
-import uvicorn
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 from rq import Queue, Worker
-import traceback
+
 from fuse.models.Config import LogConfig
 from fuse.models.Objects import ServiceIOType, ServiceIOField, SubmitterActionStatus, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType, config
 
@@ -74,7 +72,7 @@ app.add_middleware(
 config_json = config()
 
 g_mongo_client_str = os.getenv("MONGO_CLIENT")
-logger.info(f"[MAIN] connecting to {g_mongo_client_str}")
+logger.info(f"connecting to {g_mongo_client_str}")
 mongo_client = pymongo.MongoClient(g_mongo_client_str)
 
 mongo_db = mongo_client.test
@@ -87,7 +85,7 @@ mongo_objects = mongo_db.objects
 
 g_redis_default_timeout = os.getenv("REDIS_TIMEOUT")
 g_redis_connection = Redis(host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0)
-logger.info(msg=f'[MAIN] redis host={os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}')
+logger.info(f'redis host={os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}')
 g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
 
 
@@ -511,7 +509,8 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
                     os.rmdir(agent_file_dir)
 
         except Exception as e:
-            logger.error(f'({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
+            logger.error(
+                f'({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
     except Exception as e:
         detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
@@ -974,7 +973,8 @@ async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameter
             for file_type in required_in_file_types:
                 assert file_type in dataset_obj["loaded_file_objects"]
         except Exception as e:
-            raise logger.error(f'! Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
+            raise logger.error(
+                f'! Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
         logger.info(f'params={json.dumps(obj["parameters"])}')
 
         # 2. post the dataset to the analysis endpoint ##################################################################################
@@ -1179,7 +1179,6 @@ return the object_id
     except Exception as e:
         raise HTTPException(status_code=404,
                             detail=f"! (dataset_object_id={dataset_object_id}) Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
-
 
 # if __name__ == '__main__':
 #     uvicorn.run("main:app", host='0.0.0.0', port=int(os.getenv("HOST_PORT")), reload=True)
