@@ -1,12 +1,15 @@
+import os
+
 from pydantic import BaseModel
+
 
 class LogConfig(BaseModel):
     """Logging configuration to be set for the server"""
-    
+
     LOGGER_NAME: str = "fuse-agent"
-    LOG_FORMAT: str = "%(levelprefix)s | %(asctime)s | %(message)s"
-    LOG_LEVEL: str = "DEBUG"
-    
+    LOG_FORMAT: str = "%(levelprefix)s | %(asctime)s | %(funcName)s | %(message)s"
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", default="DEBUG")
+
     # Logging config
     version = 1
     disable_existing_loggers = False
