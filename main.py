@@ -264,17 +264,17 @@ async def tools():
     return _get_services("fuse-tool-")
 
 
-def _resolveRef(ref, models):
+def _resolve_ref(ref, models):
     (refpath, model_name) = os.path.split(ref["$ref"])
     logger.info(msg=f"[_resolveRef] referenced path={refpath}, model={model_name} ")
-    _resolveRefs(models[model_name], models)
+    _resolve_refs(models[model_name], models)
     return model_name
 
 
-def _resolveRefs(doc, models):
+def _resolve_refs(doc, models):
     if type(doc) == dict:
         if "$ref" in doc:
-            model_name = _resolveRef(doc, models)
+            model_name = _resolve_ref(doc, models)
             doc[model_name] = models[model_name]
             del doc["$ref"]
             logger.info(msg=f"[_resolveRefs] STOP:resolved[name={model_name}, obj={doc[model_name]}]")
@@ -282,11 +282,11 @@ def _resolveRefs(doc, models):
         else:
             for k, v in doc.items():
                 logger.info(msg=f"[_resolveRefs] resolving dict key:{k}, value:{v}")
-                _resolveRefs(doc[k], models)
+                _resolve_refs(doc[k], models)
     elif type(doc) == list:
         for elem in doc:
             logger.info(msg=f"[_resolveRefs] resolving list element {elem}")
-            _resolveRefs(elem, models)
+            _resolve_refs(elem, models)
     else:
         logger.info(msg=f"[_resolveRefs] STOP:doc type ({type(doc)}) for leaf doc={doc}")
         return
@@ -326,7 +326,7 @@ async def get_submit_parameters(service_id: str = Query(default="fuse-provider-u
         # Recurses through dictionaries, lists, and nested references; doesn't handle referenced files
         logger.info(msg=f"[get_submit_parameters] resolving submit params={params}")
         logger.info(msg=f"[get_submit_parameters] components={components}")
-        _resolveRefs(params, components)
+        _resolve_refs(params, components)
         return params
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -486,7 +486,7 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
 
-def _initWorker():
+def _init_worker():
     worker = Worker(g_queue, connection=g_redis_connection)
     worker.work()
 
@@ -816,7 +816,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                                              "agent_status": "queued"
                                          }})
                 # xxx is this the right place for this?
-                p_worker = Process(target=_initWorker)
+                p_worker = Process(target=_init_worker)
                 p_worker.start()
                 # xxx should this be p_worker.work()?
 
@@ -1147,7 +1147,7 @@ async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameter
         entry = m_objects.find({"object_id": agent_object_id}, {"_id": 0})
         assert _mongo_count(m_objects, {"object_id": agent_object_id}) == 1
         obj = entry[0]
-        required_in_file_types = _get_service_value(obj["parameters"]["service_id"], "inputDatasetType", "file_types")
+        required_in_file_types = _get_service_value(obj["parameters"]["service_id"], ServiceIOType.datasetInput, ServiceIOField.fileTypes)
         # update to initialize agent object
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
@@ -1168,7 +1168,7 @@ async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameter
                 assert file_type in dataset_obj["loaded_file_objects"]
         except Exception as e:
             raise logger.error(
-                msg='! {function_name} Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
+                msg=f'! {function_name} Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
 
         logger.info(msg=f'{function_name} params={json.dumps(obj["parameters"])}')
 
@@ -1367,7 +1367,7 @@ return the object_id
                                  }})
         # xxx is this the right place for this?
         logger.info(msg=f"{function_name} Starting workers")
-        p_worker = Process(target=_initWorker)
+        p_worker = Process(target=_init_worker)
         p_worker.start()
         # xxx should this be p_worker.work()?
 
