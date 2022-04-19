@@ -89,19 +89,6 @@ class Submitter(BaseModel):
     status: SubmitterStatus = SubmitterStatus.requested
 
 
-class FileType(str, Enum):
-    dataset_archive = 'filetype-dataset-archive'
-    dataset_expression = 'filetype-dataset-expression'
-    dataset_properties = 'filetype-dataset-properties'
-    results_pca = 'filetype-results-pca'
-
-
-class FileObject:
-    filetype_dataset_archive: Optional[str] = None
-    filetype_dataset_expression: Optional[str] = None
-    filetype_dataset_properties: Optional[str] = None
-
-
 class ServiceIOType(str, Enum):
     datasetInput = 'inputDatasetType'
     resultsOutput = 'outputResultsType'
@@ -115,27 +102,16 @@ class ServiceIOField(str, Enum):
     fileExt = 'file_extension'
 
 
-class ProviderDataset:
-    """
-    A set of one or more objects that have been loaded into the 3rd-party provider, bundled together based on how the original submitter loaded them.
-    """
-    object_id: str
-    created_time: datetime
-    parameters: dict
-    agent_status: JobStatus
-    detail: str
-    service_object_id: str
-    service_host_url: HttpUrl
-    loaded_file_objects: List[FileObject]
-    num_files_requested: int
-
-
-class ToolDataset:
-    """
-    A list of one or more of the files from a specific ProviderDataset loaded by the agent
-    """
-    provider_dataset_object_id: str
-    file_types: List[FileType]
+class ReferenceModel(str, Enum):
+    MT_iCHOv1_final = "MT_iCHOv1_final.mat"
+    MT_iHsa = "MT_iHsa.mat"
+    MT_iMM1415 = "MT_iMM1415.mat"
+    MT_inesMouseModel = "MT_inesMouseModel.mat"
+    MT_iRno = "MT_iRno.mat"
+    MT_quek14 = "MT_quek14.mat"
+    MT_recon_1 = "MT_recon_1.mat"
+    MT_recon_2 = "MT_recon_2.mat"
+    MT_recon_2_2_entrez = "MT_recon_2_2_entrez.mat"
 
 
 @as_form
@@ -143,6 +119,16 @@ class ToolParameters(BaseModel):
     service_id: str
     submitter_id: EmailStr = Field(..., title="email", description="unique submitter id (email)")
     number_of_components: Optional[int] = 3
+    reference_model: Optional[ReferenceModel] = ReferenceModel.MT_recon_2_2_entrez
+    threshold_type: Optional[str] = "local"
+    percentile_or_value: Optional[str] = "value"
+    percentile: Optional[int] = 25
+    value: Optional[int] = 5
+    local_threshold_type: Optional[str] = "minmaxmean"
+    percentile_low: Optional[int] = 25
+    percentile_high: Optional[int] = 75
+    value_low: Optional[int] = 5
+    value_high: Optional[int] = 5
     dataset: str = Field(...)
     description: Optional[str] = Field(None, title="Description", description="detailed description of the requested analysis being performed (optional)")
     expression_url: Optional[AnyHttpUrl] = Field(None, title="Gene expression URL", description="Optionally grab expression from an URL instead of uploading a file")
@@ -150,10 +136,6 @@ class ToolParameters(BaseModel):
     archive_url: Optional[AnyHttpUrl] = Field(None, title="Archive URL", description="Optionally grab all the files from an URL to an archive instead of uploading file(s)")
     results_provider_service_id: Optional[str] = Field(config()["results-provider-services"]["default"], title="Data Provider for Results",
                                                        description="If not set, the system default will be provided. e.g., 'fuse-provider-upload'")
-
-
-# xxx cdm
-from enum import Enum
 
 
 class DataType(str, Enum):
