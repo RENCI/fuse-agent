@@ -1,116 +1,30 @@
-import inspect
 import json
 import logging
 import os
-import pathlib
 import shutil
 import traceback
 import uuid
 from datetime import datetime, timedelta
-from enum import Enum
 from logging.config import dictConfig
 from multiprocessing import Process
-from typing import Type, Optional, List
+from typing import Optional
 
 import nest_asyncio
 import pymongo
 import requests
 import uvicorn
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl, AnyHttpUrl
 from redis import Redis
 from rq import Queue, Worker
 
 from fuse.models.Config import LogConfig
+from fuse.models.Objects import ServiceIOType, ServiceIOField, SubmitterActionStatus, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType, config
 
 nest_asyncio.apply()
 
-# from bson.json_util import dumps, loads
-
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("fuse-agent")
-
-
-def as_form(cls: Type[BaseModel]):
-    new_params = [
-        inspect.Parameter(
-            field.alias,
-            inspect.Parameter.POSITIONAL_ONLY,
-            default=(Form(field.default) if not field.required else Form(...)),
-        )
-        for field in cls.__fields__.values()
-    ]
-
-    async def _as_form(**data):
-        return cls(**data)
-
-    sig = inspect.signature(_as_form)
-    sig = sig.replace(parameters=new_params)
-    _as_form.__signature__ = sig
-    setattr(cls, "as_form", _as_form)
-    return cls
-
-
-# xxx clean up these schemas and pull them out to the fuse.models diretory
-# xxx fit this to known data provider parameters
-
-
-class Checksums(BaseModel):
-    checksum: str
-    type: str
-
-
-class AccessURL(BaseModel):
-    url: AnyUrl = None
-    headers: str = None
-
-
-class AccessMethods(BaseModel):
-    type: str = None
-    access_url: AccessURL = None
-    access_id: str = None
-    region: str = None
-
-
-class Contents(BaseModel):
-    name: str = None
-    id: str = None
-    drs_uri: AnyUrl = None
-    contents: List[str] = []
-
-
-class JobStatus(str, Enum):
-    started = 'started'
-    failed = 'failed'
-    finished = 'finished'
-
-
-class Service(BaseModel):
-    id: str
-    title: str = None
-    URL: HttpUrl = None
-
-
-class SubmitterActionStatus(str, Enum):
-    unknown = 'unknown'
-    created = 'created'
-    existed = 'existed'
-
-
-class SubmitterStatus(str, Enum):
-    requested = 'requested'
-    approved = 'approved'
-    disabled = 'disabled'
-
-
-@as_form
-class Submitter(BaseModel):
-    object_id: str = None
-    submitter_id: EmailStr = None
-    created_time: datetime = None
-    status: SubmitterStatus = SubmitterStatus.requested
-
 
 tags_metadata = [
     {"name": "Data Provider Service", "description": "Call out to 3rd party data provider services"},
@@ -142,7 +56,7 @@ app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
 origins = [
     f"http://{os.getenv('HOST_NAME')}:{os.getenv('HOST_PORT')}",
     f"http://{os.getenv('HOST_NAME')}",
-    "http://localhost:{os.getenv('HOST_PORT')}",
+    f"http://localhost:{os.getenv('HOST_PORT')}",
     "http://localhost",
     "*",
 ]
@@ -154,6 +68,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+config_json = config()
 
 g_mongo_client_str = os.getenv("MONGO_CLIENT")
 logger.info(msg=f"[MAIN] connecting to {g_mongo_client_str}")
@@ -197,26 +113,16 @@ def _mongo_count(coll, obj):
 
 # end mongo migration functions
 
-def _read_config():
-    function_name = "[_read_config]"
-    logger.info(msg=f'{function_name} CONFIG_PATH={os.getenv("CONFIG_PATH")}')
-    config_path = pathlib.Path(__file__).parent / os.getenv("CONFIG_PATH")
-    logger.info(msg=f'{function_name} reading config file={config_path}')
-    with open(config_path) as f:
-        return json.load(f)
-
 
 def _get_services(prefix=""):
     assert prefix == "fuse-provider-" or prefix == "fuse-tool-" or prefix == ""
-    config = _read_config()
-    return list(filter(lambda x: x.startswith(prefix), list(config["configured-services"])))
+    return list(filter(lambda x: x.startswith(prefix), list(config_json["configured-services"])))
 
 
 def _get_url(service_id: str, url_type: str = "service_url", host_type: str = "configured-services"):
     function_name = "_get_url"
-    config = _read_config()
     logger.info(msg=f'{function_name} service_id={service_id}, url_type={url_type}, host_type={host_type}')
-    return config[host_type][service_id][url_type]
+    return config_json[host_type][service_id][url_type]
 
 
 def _submitter_object_id(submitter_id):
@@ -226,31 +132,14 @@ def _submitter_object_id(submitter_id):
 ####################
 # service-info methods and cdm's
 def _get_service_info(service_id):
-    config = _read_config()
-    response = requests.get(f'{config["configured-services"][service_id]["service_url"]}/service-info')
+    response = requests.get(f'{config_json["configured-services"][service_id]["service_url"]}/service-info')
     return response.json()
-
-
-class ServiceIOType(str, Enum):
-    datasetInput = 'inputDatasetType'
-    resultsOutput = 'outputResultsType'
-
-
-class ServiceIOField(str, Enum):
-    dataType = 'data_type'
-    fileTypes = 'file_types'
-    fileType = 'file_type'
-    mimeType = 'mime_type'
-    fileExt = 'file_extension'
 
 
 def _get_service_value(service_id, iotype: ServiceIOType, field: ServiceIOField):
     assert service_id.startswith("fuse-tool-")
     service_info = _get_service_info(service_id)
     return service_info[iotype][field]
-
-
-####################
 
 
 # xxx get with David to find out what else this should return in the json
@@ -497,70 +386,6 @@ def _file_path(object_id):
     return os.path.join(local_path, f"{object_id}-data")
 
 
-def _get_default_results_provider_service_id():
-    config = _read_config()
-    return config["results-provider-services"]["default"]
-
-
-@as_form
-class ToolParameters(BaseModel):
-    service_id: str
-    submitter_id: EmailStr = Field(...,
-                                   title="email",
-                                   description="unique submitter id (email)")
-    number_of_components: Optional[int] = 3
-    dataset: str = Field(...)
-    description: Optional[str] = Field(None, title="Description",
-                                       description="detailed description of the requested analysis being performed (optional)")
-    expression_url: Optional[AnyHttpUrl] = Field(None, title="Gene expression URL",
-                                                 description="Optionally grab expression from an URL instead of uploading a file")
-    properties_url: Optional[AnyHttpUrl] = Field(None, title="Properties URL",
-                                                 description="Optionally grab properties from an URL instead of uploading a file")
-    archive_url: Optional[AnyHttpUrl] = Field(None, title="Archive URL",
-                                              description="Optionally grab all the files from an URL to an archive instead of uploading file(s)")
-    results_provider_service_id: Optional[str] = Field(_get_default_results_provider_service_id(), title="Data Provider for Results",
-                                                       description="If not set, the system default will be provided. e.g., 'fuse-provider-upload'")
-
-
-class DataType(str, Enum):
-    geneExpression = 'class_dataset_expression'
-    resultsPCATable = 'class_results_PCATable'
-    resultsCellFIE = 'class_results_CellFIE'
-    # xxx to add more datatypes: expand this
-
-
-class FileType(str, Enum):
-    datasetGeneExpression = 'filetype_dataset_expression'
-    datasetProperties = 'filetype_dataset_properties'
-    datasetArchive = 'filetype_dataset_archive'
-    resultsPCATable = 'filetype_results_PCATable'
-    resultsCellFIE = 'filetype_results_CellFIE'
-    # xxx to add more datatypes: expand this
-
-
-@as_form
-class ProviderParameters(BaseModel):
-    service_id: str = Field(...,
-                            title="Provider service id",
-                            description="id of service used to upload this object")
-    submitter_id: EmailStr = Field(...,
-                                   title="email",
-                                   description="unique submitter id (email)")
-    data_type: DataType = Field(..., title="Data type of this object",
-                                description="the type of data associated with this object (e.g, results or input dataset)")
-    description: Optional[str] = Field(None, title="Description",
-                                       description="detailed description of this data (optional)")
-    version: Optional[str] = Field(None, title="Version of this object",
-                                   description="objects shouldn't ever be deleted unless data are redacted or there is a database consistency problem.")
-    accession_id: Optional[str] = Field(None, title="External accession ID",
-                                        description="if sourced from a 3rd party, this is the accession ID on that db")
-    apikey: Optional[str] = Field(None, title="External apikey",
-                                  description="if sourced from a 3rd party, this is the apikey used for retrieval")
-    aliases: Optional[str] = Field(None, title="Optional list of aliases for this object")
-    checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
-                                                 description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
-
-
 # SHARED
 def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
     try:
@@ -743,6 +568,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         num_files_requested = 0
         for file_type in client_file_dict.keys():
             num_files_requested = num_files_requested + (client_file_dict[file_type] is not None)
+
         assert num_files_requested > 0 or parameters.accession_id is not None
 
         logger.info("[post_object] record submitter ({parameters.submitter_id}), if not found create one")
@@ -886,8 +712,7 @@ def _parse_drs(drs_uri):
 
 @app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that",
          tags=["Get", "Service", "Data Provider Service", "Tool Service"])
-async def get_url(object_id: str,
-                  file_type: FileType):
+async def get_url(object_id: str, file_type: FileType):
     """
     filetype is one of "filetype_dataset_archive", "filetype_dataset_expression", "filetype_dataset_properties", "filetype_results_cellularFunction",  or "filetype_results_PCATable"
     """
