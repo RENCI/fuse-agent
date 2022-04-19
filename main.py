@@ -1,26 +1,16 @@
-import uvicorn
-from datetime import datetime, timedelta
-import dateutil.parser
-import inspect
+import json
 import os
 import shutil
-
-from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Query
-from fastapi.logger import logger
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl, AnyHttpUrl
-from email_validator import validate_email, EmailNotValidError
-from typing import Type, Optional, List, Union, Dict
-from enum import Enum
-from starlette.responses import StreamingResponse
-
-import aiofiles
 import uuid
-import requests
-import pathlib
-import json
+from datetime import datetime, timedelta
+from typing import Optional
 
 import nest_asyncio
+import requests
+import uvicorn
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
+from fastapi.logger import logger
+from fastapi.middleware.cors import CORSMiddleware
 
 from fuse.models.Objects import ServiceIOType, ServiceIOField, SubmitterActionStatus, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType, config
 
@@ -389,8 +379,6 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
 from multiprocessing import Process
 from redis import Redis
 from rq import Queue, Worker
-from rq.job import Job
-from rq.decorators import job
 
 g_redis_default_timeout = os.getenv("REDIS_TIMEOUT")
 g_redis_connection = Redis(host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0)
@@ -731,8 +719,6 @@ def _parse_drs(drs_uri):
     
     return drs_dict
 '''
-
-from starlette.responses import StreamingResponse
 
 
 @app.get("/objects/url/{object_id}/type/{file_type}", summary="given a fuse-agent object_id, look up the metadata, find the DRS URI, parse out the URL to the file and return that",
