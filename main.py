@@ -1,30 +1,32 @@
 import inspect
 import json
+import logging
 import os
 import pathlib
 import shutil
+import traceback
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
+from logging.config import dictConfig
+from multiprocessing import Process
 from typing import Type, Optional, List
 
 import nest_asyncio
+import pymongo
 import requests
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, Form, Depends, HTTPException, Query
-from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, AnyUrl, Field, HttpUrl, AnyHttpUrl
+from redis import Redis
+from rq import Queue, Worker
+
+from fuse.models.Config import LogConfig
 
 nest_asyncio.apply()
 
 # from bson.json_util import dumps, loads
-
-import traceback
-
-from logging.config import dictConfig
-import logging
-from fuse.models.Config import LogConfig
 
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("fuse-agent")
@@ -153,8 +155,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-import pymongo
-
 g_mongo_client_str = os.getenv("MONGO_CLIENT")
 logger.info(msg=f"[MAIN] connecting to {g_mongo_client_str}")
 mongo_client = pymongo.MongoClient(g_mongo_client_str)
@@ -166,6 +166,11 @@ mongo_db_minor_version = mongo_client.server_info()["versionArray"][1]
 mongo_agent = mongo_db.agent
 mongo_submitters = mongo_db.submitters
 mongo_objects = mongo_db.objects
+
+g_redis_default_timeout = os.getenv("REDIS_TIMEOUT")
+g_redis_connection = Redis(host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0)
+logger.info(msg=f'[MAIN] redis host={os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}')
+g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
 
 
 # mongo migration functions to support running outside of container with more current instance
@@ -191,7 +196,6 @@ def _mongo_count(coll, obj):
 
 
 # end mongo migration functions
-
 
 def _read_config():
     function_name = "[_read_config]"
@@ -264,7 +268,7 @@ def _resolveRef(ref, models):
     (refpath, model_name) = os.path.split(ref["$ref"])
     logger.info(msg=f"[_resolveRef] referenced path={refpath}, model={model_name} ")
     _resolveRefs(models[model_name], models)
-    return (model_name)
+    return model_name
 
 
 def _resolveRefs(doc, models):
@@ -291,11 +295,11 @@ def _resolveRefs(doc, models):
 @app.get("/services/result_types/{service_id}", summary="types of results supported by this tool service")
 async def get_tool_result_types(service_id: str = Query(default="fuse-tool-pca",
                                                         describe="loop through /tools to retrieve the results types for each, providing the dashboard with everything it needs to render forms and solicit all the necessary information from the end user in order to analyze results")):
-    '''
+    """
     so far, known values are:
     result-type-pcaTable
     result-type-cellfie
-    '''
+    """
     raise HTTPException(status_code=404,
                         detail=f"! get_tool_result_types under construction")
 
@@ -331,13 +335,13 @@ async def get_submit_parameters(service_id: str = Query(default="fuse-provider-u
 
 @app.get("/services", summary="Returns a list of all configured services", tags=["Get", "Service", "Data Provider Service", "Tool Service"])
 async def all_services():
-    '''
+    """
     once you have the list of services, you can call each one separately to get the descriptoin of parameters to give to end-users;
     for example, this to get the full schema forthe parameters required for submitting an object to be loaded by a data provider:
     /services/schema/{service_id}
     Aside: this is done internally by requesting the openapi.json from the fastapi-enabled service, similar to:
     curl -X 'GET' 'fuse-provider-upload:8000/openapi.json
-    '''
+    """
     return _get_services("")
 
 
@@ -375,9 +379,9 @@ def api_add_submitter(submitter_id: str):
 
 @app.post("/submitters/add", summary="Create a record for a new submitter", tags=["Post", "Submitter"])
 async def add_submitter(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
-    '''
+    """
     Add a new submitter
-    '''
+    """
     try:
         return api_add_submitter(submitter_id)
     except Exception as e:
@@ -408,9 +412,9 @@ def api_get_submitters(within_minutes: int = None):
 
 @app.get("/submitters/search", summary="Return a list of known submitters", tags=["Get", "Submitter"])
 async def get_submitters(within_minutes: Optional[int] = Query(default=None, description="find submitters created within the number of specified minutes from now")):
-    '''
+    """
     return list of submitters
-    '''
+    """
     try:
         return api_get_submitters(within_minutes)
     except Exception as e:
@@ -482,16 +486,6 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
 
-from multiprocessing import Process
-from redis import Redis
-from rq import Queue, Worker
-
-g_redis_default_timeout = os.getenv("REDIS_TIMEOUT")
-g_redis_connection = Redis(host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0)
-logger.info(msg=f'[MAIN] redis host={os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}')
-g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
-
-
 def _initWorker():
     worker = Worker(g_queue, connection=g_redis_connection)
     worker.work()
@@ -526,10 +520,6 @@ class ToolParameters(BaseModel):
                                               description="Optionally grab all the files from an URL to an archive instead of uploading file(s)")
     results_provider_service_id: Optional[str] = Field(_get_default_results_provider_service_id(), title="Data Provider for Results",
                                                        description="If not set, the system default will be provided. e.g., 'fuse-provider-upload'")
-
-
-# xxx cdm
-from enum import Enum
 
 
 class DataType(str, Enum):
@@ -706,7 +696,6 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
             logger.error(
                 msg=f'{function_name} ({file_type}) ! Exception {type(e)} occurred while attempting to unlink file {agent_file_dir} for object {agent_object_id}, message=[{e}] ! traceback={traceback.format_exc()}')
 
-
     except Exception as e:
         detail_str += f"! Exception {type(e)} occurred while submitting object to service, message=[{e}] ! traceback={traceback.format_exc()}"
         logger.error(msg=f"{function_name} ({file_type}) ! status=failed, {detail_str}")
@@ -730,7 +719,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                       optional_file_expression: UploadFile = File(None),
                       optional_file_properties: UploadFile = File(None)
                       ):
-    '''
+    """
     warning: executing this repeatedly for the same service/object will create duplicates in the database
     example request_url: submitter_id=krobasky%40renci.org&data_type=dataset-geneExpression&version=1.0
     Service will be called repeatedly, once per file and once per accession_id, based on what is provided.
@@ -741,7 +730,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
             "filetype_dataset_properties": optional_file_properties
 
     If specifying an accession_id, then also specify the filetype(s) to be retreived by providing non-empty strings for the upload files of the desired types. This functionality is temporary to accommodate a prototype and will be replaced later (see https://github.com/RENCI/fuse-agent/issues/5)
-    '''
+    """
     logger.info(msg=f"[post_object] top")
     try:
         # xxx be nice and assert config["configured-services"][parameters.service_id] exists, something like this:
@@ -856,10 +845,10 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
 
 @app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter", tags=["Get", "Submitter"])
 async def get_objects(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
-    '''
+    """
     returns {'object_id': <object_id>},
     use /objects/{object_id} to get object status and other metadata
-    '''
+    """
     try:
         ret = list(map(lambda a: a, mongo_objects.find({"parameters.submitter_id": submitter_id}, {"_id": 0, "object_id": 1})))
         logger.info(msg=f"[get_objects] ret:{ret}")
@@ -899,9 +888,9 @@ def _parse_drs(drs_uri):
          tags=["Get", "Service", "Data Provider Service", "Tool Service"])
 async def get_url(object_id: str,
                   file_type: FileType):
-    '''
+    """
     filetype is one of "filetype_dataset_archive", "filetype_dataset_expression", "filetype_dataset_properties", "filetype_results_cellularFunction",  or "filetype_results_PCATable"
-    '''
+    """
     try:
         # xxx make the parameter a FileType enum instead of a string
         logger.info(msg=f"[get_url] find local object={object_id}")
@@ -926,12 +915,12 @@ async def get_url(object_id: str,
 
 
 def _agent_delete_object(agent_object_id: str):
-    ''' 
+    """
     Deletes agent object off local store; does NOT follow metadata to delete remote object.
     WARNING: call _remote_delete_object first in order to avoid orphaning cached objects that have been requested remotely
     returns:
        - array [info, stderr, status]: status can be one of "started", "deleted", "exception"
-    '''
+    """
     function_name = "[_agent_delete_object]"
     delete_status = "started"
     info_msg = ""
@@ -974,12 +963,12 @@ def _agent_delete_object(agent_object_id: str):
 
 
 def _remote_delete_object(agent_object_id: str):
-    ''' 
+    """
     Deletes follows agent object id metadata to find and delete remote object. Does NOT delete agent object.
     WARNING: call _agent_delete_object after this call to avoid dangling references.
     returns array [info, stderr, status]
     status can be one of "started", "deleted", "not found", "failed"
-    '''
+    """
     function_name = "[_remote_delete_object]"
     delete_status = "started"
     info_msg = ''
@@ -1036,7 +1025,7 @@ def _remote_delete_object(agent_object_id: str):
             tags=["Delete", "Service", "Data Provider Service", "Tool Service"])
 async def delete(object_id: str,
                  force: bool = False):
-    '''
+    """
     Delete cached data from the remote provider, identified by the provided object_id.
     <br>**WARNING**: This will orphan associated analyses; only delete downloads if:
     - the data are redacted.
@@ -1045,11 +1034,11 @@ async def delete(object_id: str,
 
     <br>**Note**: If the object was changed on the data provider's server, the old copy should be versioned in order to keep an appropriate record of the input data for past dependent analyses.
     <br>**Note**: Object will be deleted from disk regardless of whether or not it was found in the database. This can be useful for manual correction of erroneous system states.
-    <br>**Returns**: 
+    <br>**Returns**:
     - status = 'deleted' if object is found in the database and 1 object successfully deleted.
     - status = 'exception' if an exception is encountered while removing the object from the database or filesystem, regardless of whether or not the object was successfully deleted, see other returned fields for more information.
     - status = 'failed' if 0 or greater than 1 object is not found in database.
-    '''
+    """
     function_name = "[delete]"
 
     delete_status = "started"
@@ -1319,7 +1308,7 @@ try:
 @app.post("/analyze", summary="submit an analysis", tags=["Post", "Service", "Tool Service"])
 async def analyze(parameters: ToolParameters = Depends(ToolParameters.as_form),
                   requested_results_object_id: Optional[str] = Query(None, title="Request an object id for the results, not guaranteed. mainly for testing")):
-    '''
+    """
 from slack:
 When an analysis is submitted to an agent, the agent will:
 Create a "results"-type object_id in it's database, containing status="started" and the link to where you can get the object when its finished
@@ -1327,8 +1316,8 @@ enqueue the tool request
 return the object_id
 2. When the analysis job comes up, the agent updates the status, calls the tool, waits for a result,  and persists the result
 3. When the dashboard asks for the object, the agent returns the meta data
-4. If the meta data shows status = finished, the dashboard uses the link in the meta data to retrieve the results. (edited) 
-    '''
+4. If the meta data shows status = finished, the dashboard uses the link in the meta data to retrieve the results. (edited)
+    """
     function_name = "[analyze]"
     try:
         detail_str = ""
