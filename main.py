@@ -131,14 +131,21 @@ def _submitter_object_id(submitter_id):
 ####################
 # service-info methods and cdm's
 def _get_service_info(service_id):
-    response = requests.get(f'{config_json["configured-services"][service_id]["service_url"]}/service-info')
+    url = f'{config_json["configured-services"][service_id]["service_url"]}/service-info'
+    logger.info(f"url: {url}")
+    response = requests.get(url)
     return response.json()
 
 
 def _get_service_value(service_id, iotype: ServiceIOType, field: ServiceIOField):
     assert service_id.startswith("fuse-tool-")
     service_info = _get_service_info(service_id)
-    return service_info[iotype][field]
+    logger.info(f"service_info: {service_info}")
+    types = set()
+    for idx, entry in enumerate(service_info[iotype]):
+        logger.info(f"idx: {idx}, entry: {entry}")
+        types.add(entry[field])
+    return types
 
 
 # xxx get with David to find out what else this should return in the json
