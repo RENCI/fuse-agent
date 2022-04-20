@@ -173,7 +173,7 @@ def _resolve_refs(doc, models):
                 _resolve_refs(doc[k], models)
     elif type(doc) == list:
         for elem in doc:
-            logger.info(msg=f"[_resolveRefs] resolving list element {elem}")
+            logger.info(f"resolving list element {elem}")
             _resolve_refs(elem, models)
     else:
         logger.info(f"STOP:doc type ({type(doc)}) for leaf doc={doc}")
@@ -231,10 +231,6 @@ async def all_services():
     return _get_services("")
 
 
-def _submitter_object_id(submitter_id):
-    return "agent_" + submitter_id
-
-
 def api_add_submitter(submitter_id: str):
     object_id = _submitter_object_id(submitter_id)
     num_matches = _mongo_count(mongo_submitters, {"object_id": object_id})
@@ -244,12 +240,7 @@ def api_add_submitter(submitter_id: str):
         submitter_action_status = SubmitterActionStatus.existed
     else:
         assert num_matches == 0
-        submitter_object = Submitter(
-            object_id=object_id,
-            submitter_id=submitter_id,
-            created_time=datetime.utcnow(),
-            status=SubmitterStatus.approved)
-
+        submitter_object = Submitter(object_id=object_id, submitter_id=submitter_id, created_time=datetime.utcnow(), status=SubmitterStatus.approved)
         logger.info(f"submitter_object={submitter_object}")
         _mongo_insert(mongo_submitters, submitter_object.dict())
         logger.info("submitter added.")
