@@ -374,20 +374,19 @@ def _file_path(object_id):
     return os.path.join(local_path, f"{object_id}-data")
 
 
-# SHARED
 def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
     try:
         object_id = f"{prefix}_{submitter_id}_{uuid.uuid4()}"
-        assert requested_object_id is not None
-        logger.info(f"top prefex={prefix}, submitter={submitter_id}, requested:{requested_object_id}")
-        entry = coll.find({"object_id": requested_object_id}, {"_id": 0, "object_id": 1})
-        num_matches = _mongo_count(coll, {"object_id": requested_object_id})
-        logger.info(msg=f"[_gen_object_id]found ({num_matches}) matches for requested object_id={requested_object_id}")
-        assert num_matches == 0
-        return requested_object_id
-    except Exception as e:
-        logger.warning(f"? Exception {type(e)} occurred when using {requested_object_id}, using {object_id} instead. message=[{e}] ! traceback={traceback.format_exc()}")
+        if requested_object_id is not None:
+            logger.info(f"[_gen_object_id] top prefex={prefix}, submitter={submitter_id}, requested:{requested_object_id}")
+            entry = coll.find({"object_id": requested_object_id}, {"_id": 0, "object_id": 1})
+            num_matches = _mongo_count(coll, {"object_id": requested_object_id})
+            if num_matches >= 1:
+                logger.info(f"[_gen_object_id]found ({num_matches}) matches for requested object_id={requested_object_id}")
+                return requested_object_id
         return object_id
+    except Exception as e:
+        logger.exception(f"? Exception {type(e)} occurred when using {requested_object_id}, using {object_id} instead. message=[{e}] ! traceback={traceback.format_exc()}")
 
 
 def _set_agent_status(accession_id, service_object_id, num_files_requested, num_loaded_files):
