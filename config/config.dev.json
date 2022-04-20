@@ -27,9 +27,9 @@
     "fuse-tool-pca": {
       "title": "Principal Components Analyzer",
       "description": "Create a table with the given amount principal components",
-      "service_url": "http://fuse-tool-pca:8000",
+      "service_url": "http://fuse-tool-pca:8086",
       "file_url": "http://localhost:8086",
-      "container_url": "http://fuse-tool-pca:8000"
+      "container_url": "http://fuse-tool-pca:8086"
     },
     "fuse-tool-cellfie": {
       "title": "CellFie Analyzer",
