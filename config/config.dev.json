@@ -30,6 +30,13 @@
       "service_url": "http://fuse-tool-pca:8000",
       "file_url": "http://localhost:8086",
       "container_url": "http://fuse-tool-pca:8000"
+    },
+    "fuse-tool-cellfie": {
+      "title": "CellFie Analyzer",
+      "description": "Run CellFie",
+      "service_url": "http://fuse-tool-cellfie:8087",
+      "file_url": "http://localhost:8087",
+      "container_url": "http://fuse-tool-cellfie:8087"
     }
   }
 }

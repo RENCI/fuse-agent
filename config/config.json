@@ -47,6 +47,16 @@
       "host_name": "172.17.0.1",
       "host_port": "8086",
       "__comment3__":"Tools don't have file servers, they just return their results in a tar file"
+    },
+    "fuse-tool-cellfie": {
+      "title": "CellFie Analyzer",
+      "__comment1__":"Use the following if running fuse-agent on a docker network",
+      "container-network": "fuse",
+      "container_URL": "http://fuse-tool-cellfie:8000",
+      "__comment2__":"Use the following if running fuse-agent as a stand-alone app, more info here: https://pythonspeed.com/articles/docker-connection-refused/",
+      "host_name": "localhost",
+      "host_port": "8087",
+      "__comment3__":"Tools don't have file servers, they just return their results in a tar file"
     }
   }
 }
