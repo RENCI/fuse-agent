@@ -815,8 +815,7 @@ def _remote_delete_object(agent_object_id: str):
 # xxx connect this to delete associated analyses if object is dataset?
 @app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.",
             tags=["Delete", "Service", "Data Provider Service", "Tool Service"])
-async def delete(object_id: str,
-                 force: bool = False):
+async def delete(object_id: str, force: bool = False):
     """
     Delete cached data from the remote provider, identified by the provided object_id.
     <br>**WARNING**: This will orphan associated analyses; only delete downloads if:
@@ -853,7 +852,7 @@ async def delete(object_id: str,
         # delete local object
         agent_status = ""
         try:
-            if remote_status is "deleted" or remote_status is "not found" or force:
+            if remote_status == "deleted" or remote_status == "not found" or force:
                 logger.info(f"deleting agent object={object_id}")
                 # concatenate result to info, stderr
                 [info, stderr, agent_status] = [orig + " " + new for orig, new in zip([info, stderr, ''], _agent_delete_object(object_id))]
