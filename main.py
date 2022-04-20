@@ -13,6 +13,7 @@ from typing import Optional
 import nest_asyncio
 import pymongo
 import requests
+import uvicorn
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
@@ -35,6 +36,7 @@ tags_metadata = [
     {"name": "Post", "description": "Updata persistent data: All the methods you can use with a 'post' http call"},
     {"name": "Delete", "description": "WARNING: Only use these calls for redacting data, correcting an inconsistent database state, or removing test data."}
 ]
+
 g_api_version = "0.0.1"
 
 app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
@@ -50,8 +52,7 @@ app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
               license_info={
                   "name": "MIT License",
                   "url": "https://github.com/RENCI/fuse-agent/blob/main/LICENSE"
-              }
-              )
+              })
 
 origins = [
     f"http://{os.getenv('HOST_NAME')}:{os.getenv('HOST_PORT')}",
@@ -119,8 +120,7 @@ def _get_services(prefix=""):
 
 
 def _get_url(service_id: str, url_type: str = "service_url", host_type: str = "configured-services"):
-    function_name = "_get_url"
-    logger.info(msg=f'{function_name} service_id={service_id}, url_type={url_type}, host_type={host_type}')
+    logger.info(f'service_id={service_id}, url_type={url_type}, host_type={host_type}')
     return config_json[host_type][service_id][url_type]
 
 
@@ -154,7 +154,7 @@ async def tools():
 
 def _resolve_ref(ref, models):
     (refpath, model_name) = os.path.split(ref["$ref"])
-    logger.info(msg=f"[_resolveRef] referenced path={refpath}, model={model_name} ")
+    logger.info(f" referenced path={refpath}, model={model_name} ")
     _resolve_refs(models[model_name], models)
     return model_name
 
@@ -432,7 +432,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
         }
         if provider_params["accession_id"] is not None:
             logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, headers=provider_headers)
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, headers=provider_headers, timeout=3600)
         else:
             # post file data to provider
             logger.info(f'({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
@@ -488,9 +488,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
             logger.info(f'len(obj["loaded_file_objects"]=({len(obj["loaded_file_objects"])}), ({file_type}) obj={obj}')
             if len(obj["loaded_file_objects"]) == obj["num_files_requested"]:
                 m_objects.update_one({"object_id": agent_object_id},
-                                     {"$set": {
-                                         "agent_status": "finished"
-                                     }})
+                                     {"$set": {"agent_status": "finished"}})
                 logger.info(f"({file_type}) ({agent_object_id}) agent_status = finished")
 
                 if provider_params["accession_id"] is None:
@@ -508,10 +506,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
         try:
             detail_str = f'Exception {type(e)} occurred while submitting object to service, obj=({agent_object_id}), message=[{e}] ! traceback={traceback.format_exc()}'
             m_objects.update_one({"object_id": agent_object_id},
-                                 {"$set": {
-                                     "agent_status": "failed",
-                                     "detail": f'_remote_submit_file: {detail_str}'
-                                 }})
+                                 {"$set": {"agent_status": "failed", "detail": f'_remote_submit_file: {detail_str}'}})
         except:
             logger.error(f'({file_type}) ! unable to update object to failed.')
         logger.error(f'({file_type}) ! updated object {agent_object_id} to failed.')
@@ -537,7 +532,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
 
     If specifying an accession_id, then also specify the filetype(s) to be retreived by providing non-empty strings for the upload files of the desired types. This functionality is temporary to accommodate a prototype and will be replaced later (see https://github.com/RENCI/fuse-agent/issues/5)
     """
-    logger.info("top")
+    logger.info(f"parameters: {parameters}")
     try:
         # xxx be nice and assert config["configured-services"][parameters.service_id] exists, something like this:
         assert (parameters.service_id in _get_services())
@@ -643,8 +638,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         except:
             logger.error(f"! unable to change agent_object_id to agent_status=failed")
         logger.error(f"! {detail_str}")
-        raise HTTPException(status_code=500,
-                            detail=f"! {detail_str}")
+        raise HTTPException(status_code=500, detail=f"! {detail_str}")
 
 
 @app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter", tags=["Get", "Submitter"])
@@ -700,8 +694,7 @@ async def get_url(object_id: str, file_type: FileType):
         entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
-        logger.info(f'found local object, agent_status={obj["agent_status"]}')
-        logger.info(f'obj={obj}')
+        logger.info(f'found local object: {obj}')
         assert obj["agent_status"] == "finished"
 
         # if the object was created from within a docker container, the service_host_url is going to be the container name, which you NEVER WANT for an externally accessible URL.
@@ -886,8 +879,7 @@ async def delete(object_id: str,
     except Exception as e:
         detail_str = f'! Message=[{info}] Error while deleting ({object_id}), status=[{delete_status}] stderr=[{stderr}]'
         logger.error(f"Exception {type(e)} occurred while deleting agent {object_id} from filesystem. detail_str={detail_str}")
-        raise HTTPException(status_code=404,
-                            detail=detail_str)
+        raise HTTPException(status_code=404, detail=detail_str)
 
 
 # xxx is this necessary? maybe just return status instead?
@@ -931,7 +923,7 @@ async def get_object(object_id: str = Query(default=None, description="unique id
 async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameters):
     try:
         # INIT #####################################################################################################################
-        logger.info(f" connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} ")
+        logger.info(f"connecting to {g_mongo_client_str} anew; agent_object_id:{agent_object_id} ")
         # xxx take this out?:
         my_mongo_client = pymongo.MongoClient(g_mongo_client_str)
         my_mongo_db = my_mongo_client.test
@@ -965,12 +957,11 @@ async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameter
         except Exception as e:
             raise logger.error(
                 f'! Exception {type(e)} occurred while attempting to collate dataset urls for ({agent_object_id}), parameters=({obj["parameters"]}) message=[{e}] ! traceback={traceback.format_exc()}')
+
         logger.info(f'params={json.dumps(obj["parameters"])}')
 
         # 2. post the dataset to the analysis endpoint ##################################################################################
-        headers = {
-            'accept': _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.mimeType)
-        }
+
         # fill in the analyze endpoint parameters with dataset urls
         for file_type in required_in_file_types:
             # for each file_type, remove 'filetype_dataset_', append '_url' to get the relevant tool parameter name
@@ -1026,10 +1017,15 @@ try:
                 2> /dev/null | python -m json.tool | jq --sort-keys
 
         '''
-        analysis_response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit',
-                                          params=obj["parameters"], headers=headers)
-        logger.info(f'analysis_response.status_code={analysis_response.status_code}')
-        assert analysis_response.status_code == 200
+        headers = {'accept': next(iter(_get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.mimeType)))}
+        logger.info(f"headers: {headers}")
+        analysis_request_url = f"{_get_url(obj['parameters']['service_id'])}/submit"
+        params = obj["parameters"]
+        logger.info(f"analysis_request_url: {analysis_request_url}, params: {params}")
+        analysis_response = requests.post(analysis_request_url, params=params, headers=headers)
+        logger.info(f'analysis_response.status_code: {analysis_response.status_code}')
+        if analysis_response != 200:
+            raise Exception(f"Failed to successfully post request to: {analysis_request_url}")
 
         # 3. store the results object in the results service ##################################################################
         # save results to /tmp
@@ -1044,10 +1040,10 @@ try:
         # create results upload args
         files = {'client_file': (f'results-{agent_object_id}.{ext}', open(results_file_path, 'rb'))}  # xxx make this a zipped file
         headers = {
-            'accept': _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.mimeType)
+            'accept': next(iter(_get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.mimeType)))
         }
         # fill in the parameters for the results
-        results_file_type = _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.fileType)
+        results_file_type = next(iter(_get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.fileType)))
         params = {
             "submitter_id": obj["parameters"]["submitter_id"],
             "data_type": _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.dataType),
@@ -1064,7 +1060,8 @@ try:
         # read the respones
         store_obj = store_response.json()
         logger.info(f'response = ({store_obj})')
-        assert store_response.status_code == 200
+        if analysis_response != 200:
+            raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
         # xxx if the results file is a zip, add 'loaded files' meta data about the files here
         # unlink the /tmp file(s)
         os.unlink(results_file_path)
@@ -1136,7 +1133,6 @@ return the object_id
             "parameters": parameters.dict(),  # parameters used for creating the results xxx works?
             "agent_status": None,  # status of the analyses
             "detail": None,  # any error messages
-
             "service_host_url": None,  # url to tool, derived from params
             "file_host_url": None,  # url to the results data server (dataset urls are in the parameters
             "loaded_file_objects": {},  # e.g., "filetype_results_PCATable": "..."
@@ -1152,9 +1148,7 @@ return the object_id
         g_queue.enqueue(_remote_analyze_object, args=(agent_object_id, parameters), timeout=timeout_seconds, job_id=job_id, result_ttl=-1)
         logger.info(f"Updating status")
         mongo_objects.update_one({"object_id": agent_object_id},
-                                 {"$set": {
-                                     "agent_status": "queued"
-                                 }})
+                                 {"$set": {"agent_status": "queued"}})
         # xxx is this the right place for this?
         logger.info(f"Starting workers")
         p_worker = Process(target=_init_worker)
@@ -1170,5 +1164,6 @@ return the object_id
         raise HTTPException(status_code=404,
                             detail=f"! (dataset_object_id={dataset_object_id}) Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
 
-# if __name__ == '__main__':
-#     uvicorn.run("main:app", host='0.0.0.0', port=int(os.getenv("HOST_PORT")), reload=True)
+
+if __name__ == '__main__':
+    uvicorn.run("main:app", host='0.0.0.0', port=int(os.getenv("HOST_PORT")), reload=True)
