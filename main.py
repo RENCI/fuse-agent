@@ -1030,7 +1030,7 @@ try:
         logger.info(f"analysis_request_url: {analysis_request_url}, params: {params}")
         analysis_response = requests.post(analysis_request_url, params=params, headers=headers)
         logger.info(f'analysis_response.status_code: {analysis_response.status_code}')
-        if analysis_response != 200:
+        if analysis_response.status_code != 200:
             raise Exception(f"Failed to successfully post request to: {analysis_request_url}")
 
         # 3. store the results object in the results service ##################################################################
