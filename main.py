@@ -1060,27 +1060,26 @@ try:
                 logger.info(f'wrote response to {results_file_path}')
 
                 # create results upload args
-                files = {'client_file': (f'{results_file_name}', open(results_file_path, 'rb'))}  # xxx make this a zipped file
                 headers = {'accept': output[ServiceIOField.mimeType]}
                 # fill in the parameters for the results
                 params = {
                     "submitter_id": obj["parameters"]["submitter_id"],
                     "data_type": output[ServiceIOField.dataType],
                     "file_type": output[ServiceIOField.fileType],
-                    "version": "1.0"
+                    "version": "1.0",
+                    "client_file": (f'{results_file_name}', open(results_file_path, 'rb'))
                 }
-                logger.info(f'params={params}')
                 # build results upload url
                 results_provider_host_url = _get_url(obj["parameters"]["results_provider_service_id"], "service_url", "results-provider-services")
-                logger.info(f'results provider host_url={results_provider_host_url}')
+                logger.info(f'results_provider_host_url: {results_provider_host_url}, params: {params}')
                 # call upload provider
-                store_response = requests.post(f"{results_provider_host_url}/submit", data=params, headers=headers, files=files)
+                store_response = requests.post(f"{results_provider_host_url}/submit", data=params, headers=headers)
                 logger.info(f'object added to results server, status code=({store_response.status_code})')
+                if analysis_response.status_code != 200:
+                    raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
                 # read the respones
                 store_obj = store_response.json()
                 logger.info(f'response = ({store_obj})')
-                if analysis_response.status_code != 200:
-                    raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
                 # xxx if the results file is a zip, add 'loaded files' meta data about the files here
                 # unlink the /tmp file(s)
                 os.unlink(results_file_path)
