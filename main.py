@@ -1040,7 +1040,7 @@ try:
         results = analysis_response.json()
         logger.info(f"submitter_id: {results['submitter_id']}, start_time: {results['start_time']}, end_time: {results['end_time']}")
 
-        loaded_file_objects = []
+        loaded_file_objects = {}
         data = results['results']
 
         service_info = _get_service_info(obj["parameters"]["service_id"])
