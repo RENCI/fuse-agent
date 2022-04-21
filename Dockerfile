@@ -13,4 +13,4 @@ RUN apt-get -y install apt-transport-https ca-certificates curl gnupg2 software-
 COPY . /app
 COPY ./fuse /fuse
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
