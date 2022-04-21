@@ -1038,49 +1038,58 @@ try:
         # save results to /tmp
         # xxx maybe replace this with: {'client_file': open(io.StringIO(str(response.content,'utf-8')), 'rb')}
         results = analysis_response.content
-        ext = _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.fileExt)
-        results_file_name = f'{agent_object_id}.{ext}'
-        results_file_path = f'/tmp/{results_file_name}'
-        with open(results_file_path, 'wb') as s:
-            s.write(results)  # xxx make this a zipped file
-        logger.info(f'wrote response to {results_file_path}')
-        # create results upload args
-        files = {'client_file': (f'results-{agent_object_id}.{ext}', open(results_file_path, 'rb'))}  # xxx make this a zipped file
-        headers = {
-            'accept': next(iter(_get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.mimeType)))
-        }
-        # fill in the parameters for the results
-        results_file_type = next(iter(_get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.fileType)))
-        params = {
-            "submitter_id": obj["parameters"]["submitter_id"],
-            "data_type": _get_service_value(obj["parameters"]["service_id"], ServiceIOType.resultsOutput, ServiceIOField.dataType),
-            "file_type": results_file_type,
-            "version": "1.0"
-        }
-        logger.info(f'params={params}')
-        # build results upload url
-        results_provider_host_url = _get_url(obj["parameters"]["results_provider_service_id"], "service_url", "results-provider-services")
-        logger.info(f'results provider host_url={results_provider_host_url}')
-        # call upload provider
-        store_response = requests.post(f"{results_provider_host_url}/submit", params=params, headers=headers, files=files)
-        logger.info(f'object added to results server, status code=({store_response.status_code})')
-        # read the respones
-        store_obj = store_response.json()
-        logger.info(f'response = ({store_obj})')
-        if analysis_response.status_code != 200:
-            raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
-        # xxx if the results file is a zip, add 'loaded files' meta data about the files here
-        # unlink the /tmp file(s)
-        os.unlink(results_file_path)
-        # update the agent object to include the results object id
-        logger.info(f'object_id={store_obj["object_id"]}')
-        loaded_file_objects = {
-            results_file_type: {
-                "object_id": store_obj["object_id"],
-                "service_host_url": _get_url(obj["parameters"]["results_provider_service_id"]),
-                "file_host_url": _get_url(obj["parameters"]["results_provider_service_id"], "file_url")
-            }
-        }
+        logger.info(f"submitter_id: {results['submitter_id']}, start_time: {results['start_time']}, end_time: {results['end_time']}")
+
+        loaded_file_objects = []
+        data = results['results']
+
+        service_info = _get_service_info(obj["parameters"]["service_id"])
+        for output in service_info[ServiceIOType.resultsOutput]:
+            file_extension = output[ServiceIOField.fileExt]
+            results_type = output[ServiceIOField.fileType]
+            for entry in data:
+                if entry['results_type'] != results_type:
+                    continue
+                results_file_name = f'{agent_object_id}_{entry["name"]}.{file_extension}'
+                results_file_path = f'/tmp/{results_file_name}'
+                with open(results_file_path, 'wb') as s:
+                    for line in entry['data']:
+                        s.write(','.join(line).encode("utf-8"))
+                        s.write('\n'.encode('utf-8'))
+                s.close()
+                logger.info(f'wrote response to {results_file_path}')
+
+                # create results upload args
+                files = {'client_file': (f'{results_file_name}', open(results_file_path, 'rb'))}  # xxx make this a zipped file
+                headers = {'accept': output[ServiceIOField.mimeType]}
+                # fill in the parameters for the results
+                params = {
+                    "submitter_id": obj["parameters"]["submitter_id"],
+                    "data_type": output[ServiceIOField.dataType],
+                    "file_type": output[ServiceIOField.fileType],
+                    "version": "1.0"
+                }
+                logger.info(f'params={params}')
+                # build results upload url
+                results_provider_host_url = _get_url(obj["parameters"]["results_provider_service_id"], "service_url", "results-provider-services")
+                logger.info(f'results provider host_url={results_provider_host_url}')
+                # call upload provider
+                store_response = requests.post(f"{results_provider_host_url}/submit", data=params, headers=headers, files=files)
+                logger.info(f'object added to results server, status code=({store_response.status_code})')
+                # read the respones
+                store_obj = store_response.json()
+                logger.info(f'response = ({store_obj})')
+                if analysis_response.status_code != 200:
+                    raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
+                # xxx if the results file is a zip, add 'loaded files' meta data about the files here
+                # unlink the /tmp file(s)
+                os.unlink(results_file_path)
+                loaded_file_objects[results_type] = {
+                        "object_id": store_obj["object_id"],
+                        "service_host_url": _get_url(obj["parameters"]["results_provider_service_id"]),
+                        "file_host_url": _get_url(obj["parameters"]["results_provider_service_id"], "file_url")
+                    }
+
         logger.info(f'*********  loaded_file_objects = {loaded_file_objects}')
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
