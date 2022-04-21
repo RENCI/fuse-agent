@@ -941,7 +941,7 @@ async def _remote_analyze_object(agent_object_id: str, parameters: ToolParameter
         entry = m_objects.find({"object_id": agent_object_id}, {"_id": 0})
         assert _mongo_count(m_objects, {"object_id": agent_object_id}) == 1
         obj = entry[0]
-        required_in_file_types = _get_service_value(obj["parameters"]["service_id"], ServiceIOType.datasetInput, ServiceIOField.fileTypes)
+        required_in_file_types = _get_service_value(obj["parameters"]["service_id"], ServiceIOType.datasetInput, ServiceIOField.fileType)
         # update to initialize agent object
         m_objects.update_one({"object_id": agent_object_id},
                              {"$set": {
