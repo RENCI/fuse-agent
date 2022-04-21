@@ -269,7 +269,7 @@ async def add_submitter(submitter_id: str = Query(default=None, description="uni
     try:
         return api_add_submitter(submitter_id)
     except Exception as e:
-        logger.info(f"[add_submitter] exception, ! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
+        logger.info(f"exception, ! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
         raise HTTPException(status_code=404,
                             detail=f"! Exception {type(e)} occurred while inserting submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
@@ -385,11 +385,11 @@ def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
     try:
         object_id = f"{prefix}_{submitter_id}_{uuid.uuid4()}"
         if requested_object_id is not None:
-            logger.info(f"[_gen_object_id] top prefex={prefix}, submitter={submitter_id}, requested:{requested_object_id}")
+            logger.info(f"top prefex={prefix}, submitter={submitter_id}, requested:{requested_object_id}")
             entry = coll.find({"object_id": requested_object_id}, {"_id": 0, "object_id": 1})
             num_matches = _mongo_count(coll, {"object_id": requested_object_id})
             if num_matches >= 1:
-                logger.info(f"[_gen_object_id]found ({num_matches}) matches for requested object_id={requested_object_id}")
+                logger.info(f"found ({num_matches}) matches for requested object_id={requested_object_id}")
                 return requested_object_id
         return object_id
     except Exception as e:
@@ -897,26 +897,26 @@ async def get_object(object_id: str = Query(default=None, description="unique id
     """
     try:
         # xxx retrieve metadata for each file type listed in loaded_file_objects
-        logger.info(f"[get_object] Finding metadata for object {object_id}")
+        logger.info(f"Finding metadata for object {object_id}")
         entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
-        logger.info(f'[get_object] found local object, agent_status={obj["agent_status"]}')
+        logger.info(f'found local object, agent_status={obj["agent_status"]}')
         service_obj_metadata = None
         new_obj = {}
         new_obj["agent"] = obj
         new_obj["provider"] = {}
         if obj["agent_status"] == "finished":
-            logger.info(f'[get_object] obj=({obj})')
+            logger.info(f'obj=({obj})')
             for file_type in obj["loaded_file_objects"]:
-                logger.info(f'[get_object] ***********file_type =({file_type})')
-                logger.info(f'[get_object] ***********obj =({obj})')
+                logger.info(f'***********file_type =({file_type})')
+                logger.info(f'***********obj =({obj})')
                 service_object_id = obj["loaded_file_objects"][file_type]["object_id"]
                 service_host_url = obj["loaded_file_objects"][file_type]["service_host_url"]
-                logger.info(f'[get_object] ({file_type}) REQUEST: {service_host_url}/objects/{service_object_id}')
+                logger.info(f'({file_type}) REQUEST: {service_host_url}/objects/{service_object_id}')
                 response = requests.get(f'{service_host_url}/objects/{service_object_id}')
                 service_obj_metadata = response.json()
-                logger.info(f'[get_object] ({file_type}) METADATA={service_obj_metadata}')
+                logger.info(f'({file_type}) METADATA={service_obj_metadata}')
                 new_obj["provider"][file_type] = service_obj_metadata  # xxx need to fill this in during queue
 
         return new_obj
