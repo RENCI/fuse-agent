@@ -1027,8 +1027,9 @@ try:
         logger.info(f"headers: {headers}")
         analysis_request_url = f"{_get_url(obj['parameters']['service_id'])}/submit"
         params = obj["parameters"]
+        params['expression_file'] = None
         logger.info(f"analysis_request_url: {analysis_request_url}, params: {params}")
-        analysis_response = requests.post(analysis_request_url, data=params, headers=headers)
+        analysis_response = requests.post(analysis_request_url, params=params, headers=headers)
         logger.info(f'analysis_response.status_code: {analysis_response.status_code}')
         if analysis_response.status_code != 200:
             raise Exception(f"Failed to successfully post request to: {analysis_request_url}")
@@ -1061,12 +1062,12 @@ try:
         results_provider_host_url = _get_url(obj["parameters"]["results_provider_service_id"], "service_url", "results-provider-services")
         logger.info(f'results provider host_url={results_provider_host_url}')
         # call upload provider
-        store_response = requests.post(f"{results_provider_host_url}/submit", params=params, files=files)
+        store_response = requests.post(f"{results_provider_host_url}/submit", params=params, headers=headers, files=files)
         logger.info(f'object added to results server, status code=({store_response.status_code})')
         # read the respones
         store_obj = store_response.json()
         logger.info(f'response = ({store_obj})')
-        if analysis_response != 200:
+        if analysis_response.status_code != 200:
             raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
         # xxx if the results file is a zip, add 'loaded files' meta data about the files here
         # unlink the /tmp file(s)
