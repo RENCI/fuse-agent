@@ -141,7 +141,10 @@ class ToolParameters(BaseModel):
 class DataType(str, Enum):
     geneExpression = 'class_dataset_expression'
     resultsPCATable = 'class_results_PCATable'
-    resultsCellFIE = 'class_results_CellFIE'
+    resultsCellFieDetailScoringTable = 'class_results_CellFieDetailScoringTable'
+    resultsCellFieScoreBinaryTable = 'class_results_CellFieScoreBinaryTable'
+    resultsCellFieScoreTable = 'class_results_CellFieScoreTable'
+    resultsCellFieTaskInfoTable = 'class_results_CellFieTaskInfoTable'
     # xxx to add more datatypes: expand this
 
 
@@ -150,7 +153,10 @@ class FileType(str, Enum):
     datasetProperties = 'filetype_dataset_properties'
     datasetArchive = 'filetype_dataset_archive'
     resultsPCATable = 'filetype_results_PCATable'
-    resultsCellFIE = 'filetype_results_CellFIE'
+    resultsCellFieDetailScoringTable = 'filetype_results_CellFieDetailScoringTable'
+    resultsCellFieScoreBinaryTable = 'filetype_results_CellFieScoreBinaryTable'
+    resultsCellFieScoreTable = 'filetype_results_CellFieScoreTable'
+    resultsCellFieTaskInfoTable = 'filetype_results_CellFieTaskInfoTable'
     # xxx to add more datatypes: expand this
 
 
