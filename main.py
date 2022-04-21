@@ -1037,7 +1037,7 @@ try:
         # 3. store the results object in the results service ##################################################################
         # save results to /tmp
         # xxx maybe replace this with: {'client_file': open(io.StringIO(str(response.content,'utf-8')), 'rb')}
-        results = analysis_response.content
+        results = analysis_response.json()
         logger.info(f"submitter_id: {results['submitter_id']}, start_time: {results['start_time']}, end_time: {results['end_time']}")
 
         loaded_file_objects = []
