@@ -432,17 +432,14 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
                              }})
         provider_params = obj["parameters"]
         provider_params["file_type"] = file_type
-        logger.info(f"provider_params={json.dumps(provider_params)}")
         provider_headers = {'accept': 'application/json'}
+        endpoint = f'{_get_url(obj["parameters"]["service_id"])}/submit'
+        logger.info(f"endpoint: {endpoint}, provider_headers: {provider_headers}, provider_params: {provider_params}")
         if provider_params["accession_id"] is not None:
-            logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', data=provider_params, headers=provider_headers, timeout=3600)
+            response = requests.post(f'{endpoint}', data=provider_params, headers=provider_headers, timeout=3600)
         else:
-            # post file data to provider
-            logger.info(f'({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
             (agent_file_dir, agent_file_name) = os.path.split(agent_file_path)
-            logger.info(f"({file_type}) posting file {agent_file_name} from directory {agent_file_path}, type {file_type}")
-            file_data = {'client_file': open(agent_file_path, 'rb')}
+            logger.info(f"agent_file_dir: {agent_file_dir}), agent_file_name: {agent_file_name}")
             files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb'))}
             logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
             response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files, timeout=3600)
