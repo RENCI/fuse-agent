@@ -433,13 +433,10 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
         provider_params = obj["parameters"]
         provider_params["file_type"] = file_type
         logger.info(f"provider_params={json.dumps(provider_params)}")
-        provider_headers = {
-            'accept': 'application/json',
-            'Content-Type': 'multipart/form-data',
-        }
+        provider_headers = {'accept': 'application/json'}
         if provider_params["accession_id"] is not None:
             logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, headers=provider_headers, timeout=3600)
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', data=provider_params, headers=provider_headers, timeout=3600)
         else:
             # post file data to provider
             logger.info(f'({file_type}) host_url={_get_url(obj["parameters"]["service_id"])}')
@@ -448,7 +445,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
             file_data = {'client_file': open(agent_file_path, 'rb')}
             files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb'))}
             logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files)
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files, timeout=3600)
             # unlink tmp copy of the posted file
             logger.info(f"({file_type}) provider request complete for this file, removing file {agent_file_path}")
             os.unlink(agent_file_path)
