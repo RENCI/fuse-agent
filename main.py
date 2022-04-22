@@ -442,7 +442,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
             logger.info(f"agent_file_dir: {agent_file_dir}), agent_file_name: {agent_file_name}")
             files = {'client_file': (f'{agent_file_name}', open(agent_file_path, 'rb'))}
             logger.info(f'({file_type}) posting to url={_get_url(obj["parameters"]["service_id"])}/submit')
-            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', params=provider_params, files=files, timeout=3600)
+            response = requests.post(f'{_get_url(obj["parameters"]["service_id"])}/submit', data=provider_params, files=files, timeout=3600)
             # unlink tmp copy of the posted file
             logger.info(f"({file_type}) provider request complete for this file, removing file {agent_file_path}")
             os.unlink(agent_file_path)
@@ -462,10 +462,11 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
             logger.info(f'PROVIDER RESPONSE=({file_type}) {provider_object}')
             # xxx warning: if two threads are updating the same loaded_file_objects json object at once, only one file_type will be set.
             logger.info(f'Setting loaded_file_objects for {file_type} on {agent_object_id}')
-            loaded_file_object = {}
-            loaded_file_object["object_id"] = provider_object["object_id"]
-            loaded_file_object["service_host_url"] = _get_url(obj["parameters"]["service_id"])
-            loaded_file_object["file_host_url"] = _get_url(obj["parameters"]["service_id"], "file_url")
+            loaded_file_object = {
+                "object_id": provider_object["object_id"],
+                "service_host_url": _get_url(obj["parameters"]["service_id"]),
+                "file_host_url": _get_url(obj["parameters"]["service_id"], "file_url")
+            }
             logger.info(f'({file_type}) {provider_object["object_id"]}; loaded_file_objects={obj["loaded_file_objects"]}')
             m_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {
@@ -1078,10 +1079,10 @@ try:
                 # unlink the /tmp file(s)
                 os.unlink(results_file_path)
                 loaded_file_objects[results_type] = {
-                        "object_id": store_obj["object_id"],
-                        "service_host_url": _get_url(obj["parameters"]["results_provider_service_id"]),
-                        "file_host_url": _get_url(obj["parameters"]["results_provider_service_id"], "file_url")
-                    }
+                    "object_id": store_obj["object_id"],
+                    "service_host_url": _get_url(obj["parameters"]["results_provider_service_id"]),
+                    "file_host_url": _get_url(obj["parameters"]["results_provider_service_id"], "file_url")
+                }
 
         logger.info(f'*********  loaded_file_objects = {loaded_file_objects}')
         m_objects.update_one({"object_id": agent_object_id},
