@@ -1059,6 +1059,7 @@ try:
                 headers = {'accept': output[ServiceIOField.mimeType]}
                 # fill in the parameters for the results
                 params = {
+                    "service_id": "fuse-provider-upload",
                     "submitter_id": obj["parameters"]["submitter_id"],
                     "data_type": output[ServiceIOField.dataType],
                     "file_type": output[ServiceIOField.fileType],
