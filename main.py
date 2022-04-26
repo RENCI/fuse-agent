@@ -1074,6 +1074,7 @@ try:
                 if analysis_response.status_code != 200:
                     raise Exception(f"Failed to successfully post request to: {results_provider_host_url}")
                 # read the respones
+                logger.info(f"store_response.content: {store_response.content}")
                 store_obj = store_response.json()
                 logger.info(f'response = ({store_obj})')
                 # xxx if the results file is a zip, add 'loaded files' meta data about the files here
