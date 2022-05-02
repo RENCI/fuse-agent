@@ -14,6 +14,6 @@ else
     echo "creating and joining fuse network";
     docker network create -d bridge fuse
 fi
-docker-compose -f docker-compose-dev.yml up --build -V -d
+docker-compose -f docker-compose.yml up --build -V -d
 
 
