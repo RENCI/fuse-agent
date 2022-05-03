@@ -6,11 +6,11 @@ services:
     restart: always
     env_file: .env
     ports:
-        - ${HOST_PORT}:${CONTAINER_PORT}
+      - ${HOST_PORT}:${CONTAINER_PORT}
     volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - ${CONFIG_PATH}:/app/config.json
-        - $PWD/data:/app/data
+      - agent-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${CONFIG_PATH}:/app/config.json
     networks:
       - agent_network
     depends_on:
@@ -24,7 +24,7 @@ services:
     env_file:
       - .env
     volumes:
-      - $PWD/data/db:/data/db
+      - agent-tx-persistence-db:/data/db
     expose:
       - ${MONGO_PORT}
     networks:
@@ -36,7 +36,7 @@ services:
     restart: always
     environment: {}
     volumes:
-      - /data
+      - agent-redis-data:/data/redis
     expose:
       - 6379
     command: ["--appendonly", "yes"]
@@ -48,3 +48,10 @@ networks:
     name: ${CONTAINER_NETWORK}
     external: true
 
+volumes:
+  agent-tx-persistence-db:
+    name: agent-tx-persistence-db
+  agent-data:
+    name: agent-data
+  agent-redis-data:
+    name: agent-redis-data
