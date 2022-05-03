@@ -369,12 +369,6 @@ async def get_submitter(submitter_id: str = Query(default=None, description="uni
                             detail=f"! Exception {type(e)} occurred while finding submitter ({submitter_id}), message=[{e}] ! traceback={traceback.format_exc()}")
 
 
-def _file_path(object_id):
-    relative_data_path = os.getenv("RELATIVE_DATA_PATH")
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_data_path)
-    return os.path.join(local_path, f"{object_id}-data")
-
-
 def _gen_object_id(prefix, submitter_id, requested_object_id, coll):
     try:
         object_id = f"{prefix}_{submitter_id}_{uuid.uuid4()}"
@@ -575,7 +569,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         #####
 
         # unlink files and directory (which may be empty) when you get into the job
-        agent_path = _file_path(agent_object_id)
+        agent_path = f"/app/data/{agent_object_id}-data"
         os.mkdir(agent_path)
         logger.info(f"upload file path = {agent_path}")
 
