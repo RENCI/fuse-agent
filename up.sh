@@ -4,8 +4,6 @@ set -a
 . .env
 set +a
 
-#sudo chown -R ${USER} data
-
 CMD=`docker network ls | awk '{print $2}' | grep -w fuse | head -1`
 RET=$CMD
 if [ "$RET" == "fuse" ]; then
