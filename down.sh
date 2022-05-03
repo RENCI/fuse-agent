@@ -1,5 +1,7 @@
 #!/bin/bash
 
-export $(cat .env|grep -v '^#')
+set -a
+. .env
+set +a
 
-docker-compose -f docker-compose.yml down --remove-orphans
+docker-compose -f docker-compose.yml down
