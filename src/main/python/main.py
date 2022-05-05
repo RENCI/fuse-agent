@@ -58,6 +58,8 @@ origins = [
     f"http://{os.getenv('HOST_NAME')}",
     f"http://{os.getenv('CONTAINER_NAME')}:{os.getenv('CONTAINER_PORT')}"
     f"http://{os.getenv('CONTAINER_NAME')}"
+    f"http://fuse-provider-upload:8083"
+    f"http://fuse-provider-upload"
     f"http://localhost:{os.getenv('HOST_PORT')}",
     "http://localhost",
     "*",
