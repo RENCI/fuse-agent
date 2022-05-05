@@ -56,6 +56,8 @@ app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
 origins = [
     f"http://{os.getenv('HOST_NAME')}:{os.getenv('HOST_PORT')}",
     f"http://{os.getenv('HOST_NAME')}",
+    f"http://{os.getenv('CONTAINER_NAME')}:{os.getenv('CONTAINER_PORT')}"
+    f"http://{os.getenv('CONTAINER_NAME')}"
     f"http://localhost:{os.getenv('HOST_PORT')}",
     "http://localhost",
     "*",
