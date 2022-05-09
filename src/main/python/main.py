@@ -86,7 +86,8 @@ mongo_objects = mongo_db.objects
 g_redis_default_timeout = os.getenv("REDIS_TIMEOUT")
 g_redis_connection = Redis(host=os.getenv("REDIS_HOST"), port=os.getenv("REDIS_PORT"), db=0)
 logger.info(f'redis host={os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}')
-g_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
+provider_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
+tool_queue = Queue(connection=g_redis_connection, is_async=True, default_timeout=g_redis_default_timeout)
 
 
 # mongo migration functions to support running outside of container with more current instance
@@ -596,11 +597,11 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
                 job_id = str(uuid.uuid4())
                 # xxx maybe add to loaded_file_objects a status code and job_id?
                 logger.info(f"QUEUE: agent_object_id:{agent_object_id}, file_type:{file_type}, agent_file_path:{agent_file_path},job_id=:{job_id}")  # ok so far
-                g_queue.enqueue(_remote_submit_file,
-                                args=(agent_object_id, file_type, agent_file_path, job_id),
-                                timeout=timeout_seconds,
-                                job_id=job_id,
-                                result_ttl=-1)
+                provider_queue.enqueue(_remote_submit_file,
+                                       args=(agent_object_id, file_type, agent_file_path, job_id),
+                                       timeout=timeout_seconds,
+                                       job_id=job_id,
+                                       result_ttl=-1)
                 mongo_objects.update_one({"object_id": agent_object_id},
                                          {"$set": {
                                              "agent_status": "queued"
@@ -1140,7 +1141,7 @@ return the object_id
         # enqueue the job
         job_id = str(uuid.uuid4())
         logger.info(f"submitter={parameters.submitter_id}, to service_id={parameters.service_id}, timeout_seconds={timeout_seconds}, job_id={job_id}")
-        g_queue.enqueue(_remote_analyze_object, args=(agent_object_id, parameters), timeout=timeout_seconds, job_id=job_id, result_ttl=-1)
+        tool_queue.enqueue(_remote_analyze_object, args=(agent_object_id, parameters), timeout=timeout_seconds, job_id=job_id, result_ttl=-1)
         logger.info(f"Updating status")
         mongo_objects.update_one({"object_id": agent_object_id},
                                  {"$set": {"agent_status": "queued"}})
