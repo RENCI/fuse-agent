@@ -15,16 +15,20 @@ import requests
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fuse_utilities.main import SubmitterActionStatus, ServiceIOField, ServiceIOType, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType
 from redis import Redis
 from rq import Queue
 
 from fuse.models.Config import LogConfig
-from fuse.models.Objects import ServiceIOType, ServiceIOField, SubmitterActionStatus, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType, config
-
 nest_asyncio.apply()
 
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("fuse-agent")
+
+
+def config():
+    with open("/app/config.json") as f:
+        return json.load(f)
 
 tags_metadata = [
     {"name": "Data Provider Service", "description": "Call out to 3rd party data provider services"},
