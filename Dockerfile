@@ -7,7 +7,7 @@ EXPOSE 8000
 
 COPY . /app
 RUN pip install -r /app/requirements.txt
-RUN pip install -i https://test.pypi.org/simple/ fuse-cdm
+RUN pip install -i https://test.pypi.org/simple/ fuse-cdm==1.5.0
 
 WORKDIR /app
 
