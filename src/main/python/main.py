@@ -9,26 +9,25 @@ from datetime import datetime, timedelta
 from logging.config import dictConfig
 from typing import Optional
 
+import docker
 import nest_asyncio
 import pymongo
 import requests
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fuse_utilities.main import SubmitterActionStatus, ServiceIOField, ServiceIOType, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType
+from fuse_cdm.main import SubmitterActionStatus, ServiceIOField, ServiceIOType, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType
 from redis import Redis
 from rq import Queue
 
 from fuse.models.Config import LogConfig
+
 nest_asyncio.apply()
 
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("fuse-agent")
 
-
-def config():
-    with open("/app/config.json") as f:
-        return json.load(f)
+docker_client = docker.from_env()
 
 tags_metadata = [
     {"name": "Data Provider Service", "description": "Call out to 3rd party data provider services"},
@@ -72,6 +71,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def config():
+    with open("/app/config.json") as f:
+        return json.load(f)
+
 
 config_json = config()
 
@@ -1158,6 +1163,22 @@ return the object_id
     except Exception as e:
         raise HTTPException(status_code=404,
                             detail=f"! (dataset_object_id={dataset_object_id}) Exception {type(e)} occurred while running submit, message=[{e}] ! traceback={traceback.format_exc()}")
+
+
+@app.post("/cellfie_runtime_predictor")
+async def cellfie_predictor(rows: int, columns: int):
+    logger.info(f"rows: {rows}, columns: {columns}")
+    try:
+        image = "jdr0887/cellfie-runtime-predictor:0.1.0"
+        command = f"-r \"{rows}\" -c \"{columns}\""
+        run_uuid = str(uuid.uuid4())[:8]
+        container_logs = docker_client.containers.run(image, name=f"{run_uuid}-cellfie-predictor", privileged=True, remove=True, command=command, detach=False)
+        container_logs_decoded = container_logs.decode("utf8")
+        stderr = container_logs_decoded
+        logger.debug(msg=f"stderr: {stderr}")
+        return {"duration": stderr}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Exception {type(e)} occurred while running cellfie_predictor, message=[{e}] ! traceback={traceback.format_exc()}")
 
 
 if __name__ == '__main__':
