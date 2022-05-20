@@ -515,7 +515,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
 
 @app.post("/objects/load", summary="load object metadata and data for analysis from an end user or a 3rd party server",
           tags=["Post", "Service", "Data Provider Service", "Tool Service"])
-async def post_object(parameters: AgentProviderParameters = Depends(ProviderParameters.as_form),
+async def post_object(parameters: AgentProviderParameters = Depends(AgentProviderParameters.as_form),
                       optional_file_archive: UploadFile = File(None),
                       optional_file_expression: UploadFile = File(None),
                       optional_file_properties: UploadFile = File(None)
