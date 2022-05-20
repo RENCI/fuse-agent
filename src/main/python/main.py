@@ -21,6 +21,7 @@ from redis import Redis
 from rq import Queue
 
 from fuse.models.Config import LogConfig
+from fuse.models.Objects import AgentProviderParameters
 
 nest_asyncio.apply()
 
@@ -514,8 +515,7 @@ async def _remote_submit_file(agent_object_id: str, file_type: str, agent_file_p
 
 @app.post("/objects/load", summary="load object metadata and data for analysis from an end user or a 3rd party server",
           tags=["Post", "Service", "Data Provider Service", "Tool Service"])
-async def post_object(parameters: ProviderParameters = Depends(ProviderParameters.as_form),
-                      requested_object_id: Optional[str] = Query(None, title="Request an object id, not guaranteed. mainly for testing"),
+async def post_object(parameters: AgentProviderParameters = Depends(ProviderParameters.as_form),
                       optional_file_archive: UploadFile = File(None),
                       optional_file_expression: UploadFile = File(None),
                       optional_file_properties: UploadFile = File(None)
@@ -553,7 +553,7 @@ async def post_object(parameters: ProviderParameters = Depends(ProviderParameter
         # xxx This code is common with /analyze, break it out:
         # Insert a new agent object
         logger.info(f"getting id")
-        agent_object_id = _gen_object_id("agent", parameters.submitter_id, requested_object_id, mongo_objects)
+        agent_object_id = _gen_object_id("agent", parameters.submitter_id, parameters.requested_object_id, mongo_objects)
         timeout_seconds = g_redis_default_timeout  # read this from config.json for the service xxx
         logger.info(f"submitter={parameters.submitter_id}, to service_id={parameters.service_id}, requesting {num_files_requested} files, timeout_seconds={timeout_seconds}")
         # stream any file(s) onto the fuse-agent server, named on fuse-agent from the client file name
