@@ -1172,12 +1172,10 @@ async def cellfie_predictor(rows: int, columns: int):
         image = "jdr0887/cellfie-runtime-predictor:0.1.0"
         command = f"-r {rows} -c {columns}"
         run_uuid = str(uuid.uuid4())[:8]
-        container_logs = docker_client.containers.run(image, name=f"{run_uuid}-cellfie-predictor", privileged=True, remove=True, command=command, detach=False, stdout=True,
-                                                      stderr=True)
-        container_logs_decoded = container_logs.decode("utf8")
-        stderr = container_logs_decoded
-        logger.debug(msg=f"stderr: {stderr}")
-        return {"duration": stderr}
+        container_logs = docker_client.containers.run(image, name=f"{run_uuid}-cellfie-predictor", privileged=True, remove=True, command=command, detach=False)
+        container_logs_decoded = container_logs.decode("utf8").strip()
+        logger.debug(msg=f"container_logs_decoded: {container_logs_decoded}")
+        return {"duration": container_logs_decoded}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Exception {type(e)} occurred while running cellfie_predictor, message=[{e}] ! traceback={traceback.format_exc()}")
 
