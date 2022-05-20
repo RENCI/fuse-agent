@@ -642,6 +642,8 @@ async def update_description(object_id: str, new_description: str):
     logger.info(f"find local object={object_id}")
     try:
         mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
+        mongo_agent.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
+        return {"update_description": "done"}
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"! Exception {type(e)} occurred while updating description for {object_id}, message=[{e}] ! traceback={traceback.format_exc()}")
