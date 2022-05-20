@@ -637,6 +637,16 @@ async def post_object(parameters: AgentProviderParameters = Depends(AgentProvide
         raise HTTPException(status_code=500, detail=f"! {detail_str}")
 
 
+@app.post("/update_description")
+async def update_description(object_id: str, new_description: str):
+    logger.info(f"find local object={object_id}")
+    try:
+        mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while updating description for {object_id}, message=[{e}] ! traceback={traceback.format_exc()}")
+
+
 @app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter", tags=["Get", "Submitter"])
 async def get_objects(submitter_id: str = Query(default=None, description="unique identifier for the submitter (e.g., email)")):
     """
