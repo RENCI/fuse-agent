@@ -641,8 +641,11 @@ async def post_object(parameters: AgentProviderParameters = Depends(AgentProvide
 async def update_description(object_id: str, new_description: str):
     logger.info(f"find local object={object_id}")
     try:
+        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
+        assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
+        obj = entry[0]
+        logger.info(f'found local object: {obj}')
         mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
-        mongo_agent.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
         return {"update_description": "done"}
     except Exception as e:
         raise HTTPException(status_code=500,
