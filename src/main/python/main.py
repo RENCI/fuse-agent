@@ -644,8 +644,10 @@ async def update_description(object_id: str, new_description: str):
         entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
+        parameters = obj["parameters"]
+        parameters["description"] = new_description
         logger.info(f'found local object: {obj}')
-        mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description, "parameters": {"description": new_description}}})
+        mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description, "parameters": parameters}})
         return {"update_description": "done"}
     except Exception as e:
         raise HTTPException(status_code=500,
