@@ -16,7 +16,7 @@ import requests
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fuse_cdm.main import SubmitterActionStatus, ServiceIOField, ServiceIOType, Submitter, SubmitterStatus, ToolParameters, ProviderParameters, FileType
+from fuse_cdm.main import SubmitterActionStatus, ServiceIOField, ServiceIOType, Submitter, SubmitterStatus, ToolParameters, FileType
 from redis import Redis
 from rq import Queue
 
@@ -645,7 +645,7 @@ async def update_description(object_id: str, new_description: str):
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
         logger.info(f'found local object: {obj}')
-        mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description}})
+        mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description, "parameters": {"description": new_description}}})
         return {"update_description": "done"}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -906,21 +906,19 @@ async def get_object(object_id: str = Query(default=None, description="unique id
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
         logger.info(f'found local object, agent_status={obj["agent_status"]}')
+        logger.info(f'obj: {obj}')
         service_obj_metadata = None
-        new_obj = {}
-        new_obj["agent"] = obj
-        new_obj["provider"] = {}
+        new_obj = {"agent": obj, "provider": {}}
         if obj["agent_status"] == "finished":
-            logger.info(f'obj=({obj})')
             for file_type in obj["loaded_file_objects"]:
-                logger.info(f'***********file_type =({file_type})')
-                logger.info(f'***********obj =({obj})')
+                logger.info(f'file_type in loaded_file_objects: {file_type}')
                 service_object_id = obj["loaded_file_objects"][file_type]["object_id"]
                 service_host_url = obj["loaded_file_objects"][file_type]["service_host_url"]
-                logger.info(f'({file_type}) REQUEST: {service_host_url}/objects/{service_object_id}')
-                response = requests.get(f'{service_host_url}/objects/{service_object_id}')
+                request_url = f'{service_host_url}/objects/{service_object_id}'
+                logger.info(f'request_url: {request_url}')
+                response = requests.get(request_url)
                 service_obj_metadata = response.json()
-                logger.info(f'({file_type}) METADATA={service_obj_metadata}')
+                logger.info(f'service_obj_metadata: {service_obj_metadata}')
                 new_obj["provider"][file_type] = service_obj_metadata  # xxx need to fill this in during queue
 
         return new_obj
