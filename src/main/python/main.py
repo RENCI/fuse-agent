@@ -639,19 +639,34 @@ async def post_object(parameters: AgentProviderParameters = Depends(AgentProvide
 
 @app.post("/update_description")
 async def update_description(object_id: str, new_description: str):
-    logger.info(f"find local object={object_id}")
+    logger.info(f"object_id: {object_id}, new_description: {new_description}")
     try:
         entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
         assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
         obj = entry[0]
         parameters = obj["parameters"]
         parameters["description"] = new_description
-        logger.info(f'found local object: {obj}')
+        logger.debug(f'found local object: {obj}')
         mongo_objects.update_one({"object_id": object_id}, {"$set": {"description": new_description, "parameters": parameters}})
         return {"update_description": "done"}
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"! Exception {type(e)} occurred while updating description for {object_id}, message=[{e}] ! traceback={traceback.format_exc()}")
+
+
+@app.post("/update_status")
+async def update_status(object_id: str, new_status: str):
+    logger.info(f"object_id: {object_id}, new_status: {new_status}")
+    try:
+        entry = mongo_objects.find({"object_id": object_id}, {"_id": 0})
+        assert _mongo_count(mongo_objects, {"object_id": object_id}) == 1
+        obj = entry[0]
+        logger.debug(f'found local object: {obj}')
+        mongo_objects.update_one({"object_id": object_id}, {"$set": {"agent_status": new_status}})
+        return {"update_status": "done"}
+    except Exception as e:
+        raise HTTPException(status_code=500,
+                            detail=f"! Exception {type(e)} occurred while updating status for {object_id}, message=[{e}] ! traceback={traceback.format_exc()}")
 
 
 @app.get("/objects/search/{submitter_id}", summary="get all object_ids accessible for this submitter", tags=["Get", "Submitter"])
